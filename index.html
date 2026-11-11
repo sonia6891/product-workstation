@@ -123,6 +123,13 @@ main { min-width: 0; padding-block: 22px 60px; padding-left: 28px; padding-right
 .grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
 .span12 { grid-column: span 12; } .span7 { grid-column: span 7; } .span5 { grid-column: span 5; } .span6 { grid-column: span 6; }
 
+.live { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 10px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); font-size: 13px; color: var(--ink-2); }
+.live .lt { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: var(--ink); }
+.live .lt::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 0 var(--good); animation: livepulse 2s infinite; }
+.live b { color: var(--ink); font-variant-numeric: tabular-nums; font-size: 15px; margin-left: 4px; }
+.live .la { margin-left: auto; color: var(--muted); font-size: 12px; }
+@keyframes livepulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 60%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .live .lt::before { animation: none; } }
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .kpi { background: var(--panel); padding: 14px 16px 10px; display: grid; grid-template-rows: auto auto auto 1fr; gap: 2px; min-width: 0; }
 .kl { font-size: 12.5px; color: var(--ink-2); }
@@ -434,7 +441,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const TODAY = iso(new Date());
+let TODAY = iso(new Date());
 const addDays = (s, n) => { const [y, m, d] = s.split('-').map(Number); return iso(new Date(y, m - 1, d + n)); };
 const addMonths = (mo, n) => { const [y, m] = mo.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
 const monthEnd = mo => { const [y, m] = mo.split('-').map(Number); return iso(new Date(y, m, 0)); };
@@ -451,9 +458,11 @@ function nf(key, opts) { return _nf[key] || (_nf[key] = new Intl.NumberFormat('z
 function fmtVal(v, f) {
   if (v == null || !isFinite(v)) return '—';
   const cur = S.cfg.currency || 'USD';
+  // zh-TW prints TWD as a bare "$"; spell it NT$ so it never reads as US dollars.
+  const tw = s => cur === 'TWD' ? s.replace(/^(-?)\$/, '$1NT$') : s;
   switch (f) {
-    case 'cur': return nf('c0' + cur, { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(v);
-    case 'cur2': return nf('c2' + cur, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+    case 'cur': return tw(nf('c0' + cur, { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(v));
+    case 'cur2': return tw(nf('c2' + cur, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v));
     case 'x': return v.toFixed(2) + 'x';
     case 'pct': return (v * 100).toFixed(1) + '%';
     default: return nf('i', { maximumFractionDigits: 0 }).format(Math.round(v));
@@ -480,8 +489,25 @@ function setSync(state) {
   const el = $('#sync');
   const map = { ok: ['已同步', 'ok'], slow: ['資料庫還沒回應，資料可能不是最新', 'warn'], offline: ['離線預覽・資料不會儲存', 'err'], err: ['同步中斷，請重新整理', 'err'] };
   const [txt, cls] = map[state] || ['連線中…', ''];
-  el.textContent = txt; el.className = cls;
+  el.textContent = txt; el.className = cls; S.syncState = state; tickLive();
 }
+/* Apps push their numbers every minute (see README); show how fresh they are. */
+function lastPush() { return Math.max(0, ...Object.values((S.sync && S.sync.sources) || {}).map(s => +s.at || 0)); }
+function freshText() {
+  const t = lastPush(); if (!t) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  return s < 60 ? `${s} 秒前更新` : s < 3600 ? `${Math.floor(s / 60)} 分鐘前更新` : `${Math.floor(s / 3600)} 小時前更新`;
+}
+function tickLive() {
+  const f = freshText();
+  const el = $('#sync'); if (el && S.syncState === 'ok' && f) el.textContent = '即時・' + f;
+  const la = $('#live-at'); if (la) la.textContent = f ? '最後更新：' + f.replace('更新', '') : '';
+}
+setInterval(() => {
+  const t = iso(new Date());
+  if (t !== TODAY) { TODAY = t; built.view = null; schedule(); }
+  tickLive();
+}, 10000);
 
 /* ================= database ================= */
 const chains = new Map();
@@ -516,7 +542,7 @@ function writeDays(p, m, mo, mutate) {
 const genId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 20);
 const mapOf = c => c === 'products' ? S.products : c === 'issues' ? S.issues : c === 'events' ? S.events : null;
 function applyDoc(c, id, data) {
-  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; return; }
+  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } return; }
   const m = mapOf(c); if (!m) return;
   if (data) m.set(id, Object.assign({}, data, { id })); else m.delete(id);
 }
@@ -1012,8 +1038,14 @@ function renderOverview(el) {
   const metricChips = Object.entries(METRICS).filter(([k]) => k !== 'cpa').map(([k, M]) => `<button class="chip ${UI.metric === k ? 'on' : ''}" data-act="metric" data-id="${k}">${M.name}</button>`).join('');
   const groupSeg = [['total', '合計'], ['product', '依產品'], ['market', '依市場']].map(([k, l]) => `<button type="button" data-act="group" data-id="${k}" class="${gb === k ? 'on' : ''}">${l}</button>`).join('');
   const roas = cellVal(cur, 'roas');
+  const td = aggregate({ start: TODAY, end: TODAY, gran: 'all', groupBy: 'total' }).groups.get('total')?.s[0] || blankCell();
+  const liveHTML = lastPush() ? `<div class="live span12" aria-live="off"><span class="lt">今天即時</span>
+    <span>下載<b>${fmtVal(cellVal(td, 'dl'), 'int')}</b></span><span>新訂閱<b>${fmtVal(cellVal(td, 'sub'), 'int')}</b></span>
+    <span>有效訂閱<b>${fmtVal(cellVal(td, 'act'), 'int')}</b></span><span>營收<b>${fmtVal(cellVal(td, 'rev'), 'cur')}</b></span>
+    <span class="la" id="live-at"></span></div>` : '';
 
   el.innerHTML = `<div class="grid12">
+    ${liveHTML}
     <div class="kpis span12">${tiles}</div>
     <section class="card span12"><header><h3>成長趨勢<small>${esc(METRICS[UI.metric].name)}・${P.gran === 'day' ? '每日' : '每月'}${evs.length ? '・◆ 為事件標記' : ''}</small></h3><div class="seg">${groupSeg}</div></header>
       <div class="chips" style="margin-bottom:12px">${metricChips}</div>
