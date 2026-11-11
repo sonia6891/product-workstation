@@ -33,3 +33,7 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 - 目前來源：提醒喵（org `sole-proprietorship-jo`、project `remindcat`）。要加其他 App，在函式的 `SOURCES` 加一行。
 
 需要 Supabase secret `SENTRY_AUTH_TOKEN`（Sentry → Settings → Auth Tokens，只勾 Read 權限）。沒有權杖時 Bug 追蹤頁會顯示「尚未啟用」。暫停同步：`select cron.unschedule('sentry-sync');`
+
+## 外觀
+
+預設是「喵風格」（跟《喵的，又要上班了》同一套紙卡＋縫線、深色時是胡桃木色）。到 **設定 → 外觀** 可以切回「經典」樣式，選擇只記在那台裝置上。圖表的市場／產品配色兩種樣式各有一套，都檢查過色盲也分得開。
