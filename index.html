@@ -1,0 +1,1578 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#121519">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="產品工作站">
+<title>產品工作站</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Layout: a fixed left rail (navigation + product roster) beside a scrolling work area; on phones the rail becomes a sticky tab strip. */
+:root {
+  --bg: #f3f5f7; --panel: #ffffff; --panel-2: #edf0f3; --line: #e0e4e9; --line-2: #c8ced7;
+  --ink: #121519; --ink-2: #48515e; --muted: #7b8492;
+  --accent: #1d5bd8; --accent-soft: #e4ecfc; --on-accent: #ffffff;
+  --grid: #e7eaee; --axis: #c3c9d1;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --good-ink: #006300; --bad-ink: #b42323;
+  --shadow: 0 1px 2px rgba(18,21,25,.05), 0 6px 20px rgba(18,21,25,.06);
+  --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1013; --panel: #16191e; --panel-2: #1e2229; --line: #272c34; --line-2: #3a414c;
+    --ink: #eceff3; --ink-2: #b6bdc8; --muted: #868e9b;
+    --accent: #6a9af3; --accent-soft: #1a2740; --on-accent: #0b0d10;
+    --grid: #23272e; --axis: #3a414c;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --good-ink: #3cc63c; --bad-ink: #f07a7a;
+    --shadow: 0 1px 0 rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1013; --panel: #16191e; --panel-2: #1e2229; --line: #272c34; --line-2: #3a414c;
+  --ink: #eceff3; --ink-2: #b6bdc8; --muted: #868e9b;
+  --accent: #6a9af3; --accent-soft: #1a2740; --on-accent: #0b0d10;
+  --grid: #23272e; --axis: #3a414c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --good-ink: #3cc63c; --bad-ink: #f07a7a;
+  --shadow: 0 1px 0 rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; -webkit-text-size-adjust: 100%; }
+img { max-width: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.55; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num, td.n, .kv, .mono { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--f-mono); }
+
+/* ---------- shell ---------- */
+.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100%; }
+.side {
+  position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 20px;
+  padding-block: 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 14px;
+  border-right: 1px solid var(--line); background: var(--panel);
+}
+.brand { display: flex; gap: 10px; align-items: center; padding: 0 6px; }
+.brand .mark { width: 30px; height: 30px; border-radius: 8px; background: var(--ink); display: grid; grid-template-columns: repeat(3, 4px); gap: 3px; align-items: end; justify-content: center; padding-bottom: 8px; flex: none; }
+.brand .mark i { display: block; width: 4px; background: var(--panel); border-radius: 1px; }
+.brand b { display: block; font-size: 15px; letter-spacing: .02em; }
+.brand small { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.brand small::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.brand small.ok::before { background: var(--good); }
+.brand small.warn::before { background: var(--warn); }
+.brand small.err::before { background: var(--critical); }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--ink-2); text-decoration: none; font-weight: 500; white-space: nowrap; }
+.nav a svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.nav a:hover { background: var(--panel-2); color: var(--ink); }
+.nav a.on { background: var(--accent-soft); color: var(--accent); }
+.nav a em { margin-left: auto; font-style: normal; font-size: 11px; font-family: var(--f-mono); background: var(--panel-2); color: var(--ink-2); border-radius: 99px; padding: 0 7px; }
+.nav a em:empty { display: none; }
+.nav a.on em { background: var(--panel); }
+.roster { display: flex; flex-direction: column; gap: 2px; }
+.rh { font-size: 11px; letter-spacing: .08em; color: var(--muted); padding: 0 10px 6px; }
+.roster button { all: unset; cursor: pointer; display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 8px; color: var(--ink-2); font-size: 13px; }
+.roster button:hover { background: var(--panel-2); }
+.roster button.on { color: var(--ink); font-weight: 500; background: var(--panel-2); }
+.roster button:focus-visible { outline: 2px solid var(--accent); }
+.roster .addp { color: var(--accent); }
+.dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; flex: none; }
+.side .foot { margin-top: auto; font-size: 12px; color: var(--muted); padding: 0 10px; }
+
+main { min-width: 0; padding-block: 22px 60px; padding-left: 28px; padding-right: max(24px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
+.top { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-end; justify-content: space-between; }
+.top h1 { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
+.top .sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sel { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 0 4px 0 10px; height: 34px; }
+.sel span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.sel select { border: 0; background: transparent; height: 32px; padding: 0 4px; max-width: 170px; cursor: pointer; }
+.sel select:focus-visible { outline: none; }
+.sel:focus-within { border-color: var(--accent); }
+.seg { display: inline-flex; background: var(--panel-2); border-radius: 8px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 4px 11px; border-radius: 6px; cursor: pointer; color: var(--ink-2); font-size: 13px; white-space: nowrap; height: 28px; }
+.seg button.on { background: var(--panel); color: var(--ink); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+/* ---------- surfaces ---------- */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; min-width: 0; }
+.card > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; justify-content: space-between; margin-bottom: 14px; }
+.card h3 { font-size: 15px; font-weight: 700; }
+.card h3 small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 8px; }
+.card h4 { font-size: 13px; font-weight: 500; color: var(--ink-2); margin: 16px 0 8px; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+.grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.span12 { grid-column: span 12; } .span7 { grid-column: span 7; } .span5 { grid-column: span 5; } .span6 { grid-column: span 6; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.kpi { background: var(--panel); padding: 14px 16px 10px; display: grid; grid-template-rows: auto auto auto 1fr; gap: 2px; min-width: 0; }
+.kl { font-size: 12.5px; color: var(--ink-2); }
+.kv { font-size: 24px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kd { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: baseline; }
+.kd b { font-weight: 500; font-family: var(--f-mono); }
+.kd b.good { color: var(--good-ink); } .kd b.bad { color: var(--bad-ink); } .kd b.flat { color: var(--ink-2); }
+.spark { width: 100%; height: 30px; display: block; margin-top: 6px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 3px 11px; font-size: 12.5px; cursor: pointer; color: var(--ink-2); }
+.chip:hover { border-color: var(--line-2); }
+.chip.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+
+.chart { position: relative; width: 100%; min-height: 200px; }
+.chart svg { display: block; overflow: visible; touch-action: pan-y; }
+.chart .gl { stroke: var(--grid); stroke-width: 1; }
+.chart .base { stroke: var(--axis); stroke-width: 1; }
+.chart text { fill: var(--muted); font-family: var(--f-mono); font-size: 10.5px; }
+.chart .ev { stroke: var(--ink-2); stroke-dasharray: 3 3; opacity: .45; }
+.chart .evm { fill: var(--ink-2); }
+.chart .xh { stroke: var(--line-2); stroke-width: 1; }
+.chart .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 20px; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line-2); box-shadow: var(--shadow); border-radius: 8px; padding: 8px 10px; font-size: 12px; min-width: 160px; max-width: 260px; z-index: 3; }
+.tip .tt { font-weight: 500; margin-bottom: 4px; }
+.tip .tr { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.tip .tr i, .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.tip .tr span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.tip .tr b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.tip .te { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line-2); color: var(--ink-2); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bar { display: grid; grid-template-columns: minmax(70px, 120px) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
+.bar .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.bar .trk { height: 10px; background: var(--panel-2); border-radius: 0 4px 4px 0; overflow: hidden; }
+.bar .fil { height: 100%; background: var(--s1); border-radius: 0 4px 4px 0; }
+.bar .val { font-variant-numeric: tabular-nums; text-align: right; min-width: 92px; }
+.bar .val small { color: var(--muted); margin-left: 6px; font-size: 11.5px; }
+
+.tw { overflow-x: auto; margin: 0 -4px; }
+table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.t th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.t td { padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.t th.n, table.t td.n { text-align: right; }
+table.t tr:last-child td { border-bottom: 0; }
+table.t tr.click { cursor: pointer; }
+table.t tr.click:hover td { background: var(--panel-2); }
+.share { display: inline-block; width: 60px; height: 6px; background: var(--panel-2); border-radius: 3px; vertical-align: middle; margin-left: 8px; overflow: hidden; }
+.share i { display: block; height: 100%; background: var(--s1); }
+
+/* ---------- forms ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 0 14px; height: 34px; cursor: pointer; font-weight: 500; white-space: nowrap; }
+.btn:hover { background: var(--panel-2); }
+.btn.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.btn.primary:hover { opacity: .9; }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--panel-2); }
+.btn.danger { color: var(--bad-ink); }
+.btn.danger.armed { background: var(--critical); color: #fff; border-color: var(--critical); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
+.fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fld > span { font-size: 12px; color: var(--ink-2); }
+.fld input, .fld select, .fld textarea, .inp { border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 7px 10px; min-height: 36px; width: 100%; min-width: 0; }
+.fld textarea { resize: vertical; line-height: 1.6; }
+.fld input:focus, .fld select:focus, .fld textarea:focus, .inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.g2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.g3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.g4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.frow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+.sp { flex: 1; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 6px; }
+.checks label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+
+/* ---------- issues ---------- */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toolbar .inp { width: 220px; height: 34px; min-height: 34px; }
+.stat-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { display: flex; align-items: baseline; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.stat b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--ink-2); }
+.stat.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.ilist { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.irow { display: grid; grid-template-columns: 4px 44px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.irow:last-child { border-bottom: 0; }
+.irow:hover { background: var(--panel-2); }
+.irow .stripe { align-self: stretch; margin: -10px 0; }
+.irow.done .ititle { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line-2); }
+.pri { font-family: var(--f-mono); font-size: 11.5px; font-weight: 500; text-align: center; border-radius: 5px; padding: 1px 0; border: 1px solid var(--line-2); color: var(--ink-2); }
+.pri.P0 { background: var(--critical); border-color: var(--critical); color: #fff; }
+.pri.P1 { border-color: var(--serious); color: var(--ink); }
+.stripe.P0 { background: var(--critical); } .stripe.P1 { background: var(--serious); } .stripe.P2 { background: var(--warn); } .stripe.P3 { background: var(--line-2); }
+.ititle { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imeta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.imeta span { display: inline-flex; gap: 5px; align-items: center; }
+.vote { border: 1px solid var(--line-2); background: var(--panel); border-radius: 7px; padding: 2px 9px; cursor: pointer; font-family: var(--f-mono); font-size: 12px; }
+.vote:hover { border-color: var(--accent); color: var(--accent); }
+.stsel { border: 1px solid var(--line-2); border-radius: 99px; padding: 3px 8px; background: var(--panel); font-size: 12.5px; cursor: pointer; max-width: 110px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 99px; padding: 1px 10px; font-size: 12px; border: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.st-open { color: var(--ink-2); } .st-active { color: var(--accent); } .st-check { color: var(--ink); } .st-check::before { background: var(--warn); }
+.st-done { color: var(--good-ink); } .st-off { color: var(--muted); }
+.mini { display: flex; flex-direction: column; }
+.mini .irow { grid-template-columns: 4px 40px minmax(0, 1fr) auto; padding-block: 8px; }
+
+/* ---------- products ---------- */
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.pcard { display: flex; flex-direction: column; gap: 10px; }
+.pcard .ph { display: flex; align-items: center; gap: 10px; }
+.pcard .ph h3 { font-size: 16px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pcard .pdot { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+.pcard dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 13px; }
+.pcard dt { color: var(--muted); }
+.pcard dd { margin: 0; overflow-wrap: anywhere; }
+.pstats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; background: var(--panel-2); border-radius: 8px; padding: 10px 12px; }
+.pstats div { display: flex; flex-direction: column; }
+.pstats small { color: var(--muted); font-size: 11.5px; }
+.pstats b { font-variant-numeric: tabular-nums; }
+.pcard .acts { display: flex; gap: 8px; margin-top: auto; }
+.addcard { display: grid; place-items: center; min-height: 200px; border: 1.5px dashed var(--line-2); border-radius: var(--r); background: transparent; cursor: pointer; color: var(--ink-2); }
+.addcard:hover { border-color: var(--accent); color: var(--accent); }
+
+.empty-state { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 28px; }
+.empty-state h2 { font-size: 18px; }
+.empty-state p { margin: 0; color: var(--ink-2); max-width: 60ch; }
+.steps { margin: 4px 0 6px; padding-left: 20px; color: var(--ink-2); display: flex; flex-direction: column; gap: 4px; }
+.sample-tag { font-size: 11px; color: var(--muted); border: 1px dashed var(--line-2); border-radius: 4px; padding: 0 5px; margin-left: 6px; font-weight: 400; }
+.ro-note { background: var(--accent-soft); color: var(--ink); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+pre.code { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; font-family: var(--f-mono); font-size: 12px; overflow-x: auto; margin: 8px 0; }
+.listrow { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.listrow + .listrow { margin-top: 8px; }
+.evrow { display: grid; grid-template-columns: 92px auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.evrow:last-child { border-bottom: 0; }
+
+/* ---------- modal & toast ---------- */
+.overlay { position: fixed; inset: 0; background: rgba(10,12,15,.45); display: grid; place-items: center; z-index: 50; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.sheet { background: var(--panel); border-radius: 14px; width: min(640px, 100%); max-height: 100%; overflow-y: auto; padding: 20px 22px; box-shadow: 0 20px 60px rgba(0,0,0,.25); border: 1px solid var(--line); }
+.sheet form { display: flex; flex-direction: column; gap: 14px; }
+.sheet header { display: flex; align-items: center; justify-content: space-between; }
+.sheet h2 { font-size: 17px; }
+.sheet footer { display: flex; gap: 8px; align-items: center; padding-top: 4px; }
+.x { border: 0; background: transparent; cursor: pointer; font-size: 18px; color: var(--muted); width: 32px; height: 32px; border-radius: 8px; }
+.x:hover { background: var(--panel-2); }
+.toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--panel); padding: 9px 16px; border-radius: 10px; font-size: 13px; z-index: 60; box-shadow: var(--shadow); max-width: calc(100% - 32px); }
+.toast.err { background: var(--critical); color: #fff; }
+
+@media (max-width: 1100px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .span7, .span5, .span6 { grid-column: span 12; }
+}
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { position: sticky; top: env(safe-area-inset-top, 0px); height: auto; z-index: 20; flex-direction: row; align-items: center; gap: 12px; padding-block: 10px; padding-right: max(16px, env(safe-area-inset-right, 0px)); border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .side::-webkit-scrollbar { display: none; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--panel); }
+  .brand { padding: 0; }
+  .brand > div { display: none; }
+  .nav { flex-direction: row; }
+  .nav a { padding: 6px 10px; }
+  .roster, .side .foot { display: none; }
+  main { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 48px; }
+  .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g3 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .kv { font-size: 20px; }
+  .g2 { grid-template-columns: minmax(0, 1fr); }
+  .irow { grid-template-columns: 4px 40px minmax(0, 1fr) auto; }
+  .irow .vote { display: none; }
+  .toolbar .inp { width: 100%; }
+  .card { padding: 16px; }
+  .listrow { grid-template-columns: 80px minmax(0, 1fr) auto; }
+  .evrow { grid-template-columns: 84px minmax(0, 1fr) auto; }
+  .evrow .pill { display: none; }
+}
+/* ---------- sign-in ---------- */
+.auth { min-height: 100%; display: grid; place-items: center; padding-block: 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.auth-card { width: min(400px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px 26px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 16px; }
+.auth-card .brand { padding: 0; }
+.auth-card h1 { font-size: 20px; }
+.auth-card form { display: flex; flex-direction: column; gap: 12px; }
+.auth-card .btn.primary { height: 40px; }
+.auth-links { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; }
+.linkbtn:hover { text-decoration: underline; }
+.auth-msg { margin: 0; font-size: 13px; color: var(--ink-2); }
+.auth-msg.err { color: var(--bad-ink); }
+.who { display: flex; flex-direction: column; gap: 4px; }
+.who b { font-weight: 500; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.memrow:last-child { border-bottom: 0; }
+.memrow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: rise .18s ease-out; }
+  @keyframes rise { from { transform: translate(-50%, 8px); opacity: 0; } }
+}
+</style>
+</head>
+<body>
+
+<div id="auth" class="auth" hidden>
+  <div class="auth-card">
+    <div class="brand"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:11px"></i><i style="height:15px"></i></span><div><b>產品工作站</b></div></div>
+    <div><h1 id="auth-title">登入</h1><p class="hint" id="auth-sub" style="margin-top:4px"></p></div>
+    <form id="auth-form" novalidate>
+      <label class="fld" id="af-email-wrap"><span>Email</span><input id="af-email" type="email" autocomplete="email" inputmode="email"></label>
+      <label class="fld" id="af-pw-wrap"><span id="af-pw-label">密碼</span><input id="af-pw" type="password" autocomplete="current-password"></label>
+      <button class="btn primary" id="af-go" type="submit">登入</button>
+      <p class="auth-msg" id="af-msg" role="status"></p>
+    </form>
+    <div class="auth-links" id="auth-links"></div>
+  </div>
+</div>
+
+<div class="app" hidden>
+  <aside class="side">
+    <div class="brand"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:11px"></i><i style="height:15px"></i></span><div><b>產品工作站</b><small id="sync">連線中…</small></div></div>
+    <nav class="nav" aria-label="主選單">
+      <a href="#overview" data-v="overview"><svg viewBox="0 0 24 24"><path d="M4 20V13M10 20V8M16 20V4M2 20h20"/></svg>總覽</a>
+      <a href="#data" data-v="data"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>數據輸入</a>
+      <a href="#bugs" data-v="bugs"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="13" rx="5"/><path d="M12 7V4M7 13H3M21 13h-4M8 8 5.5 5.5M16 8l2.5-2.5M7.5 18 5 20.5M16.5 18l2.5 2.5"/></svg>Bug 追蹤<em id="nb-bugs"></em></a>
+      <a href="#features" data-v="features"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.8 10.6c.6.6.8 1.3.8 2.4h6c0-1.1.2-1.8.8-2.4A6 6 0 0 0 12 3z"/></svg>功能需求<em id="nb-feat"></em></a>
+      <a href="#products" data-v="products"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>產品</a>
+      <a href="#settings" data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>設定</a>
+    </nav>
+    <div class="roster">
+      <div class="rh">產品</div>
+      <div id="roster"></div>
+      <button class="addp" data-act="newproduct">＋ 新增產品</button>
+    </div>
+    <div class="foot who"><span id="foot"></span><b id="me-email"></b><button class="linkbtn" data-auth="signout" style="align-self:flex-start">登出</button></div>
+  </aside>
+
+  <main>
+    <header class="top">
+      <div><h1 id="vt">總覽</h1><p class="sub" id="vs"></p></div>
+      <div class="filters">
+        <label class="sel"><span>產品</span><select id="g-p" aria-label="產品"></select></label>
+        <label class="sel" id="g-m-wrap"><span>市場</span><select id="g-m" aria-label="市場"></select></label>
+        <div class="seg" id="g-r" role="group" aria-label="期間">
+          <button type="button" data-r="7">7 天</button><button type="button" data-r="30">30 天</button><button type="button" data-r="90">90 天</button><button type="button" data-r="12m">12 個月</button>
+        </div>
+      </div>
+    </header>
+    <div id="ro" class="ro-note" hidden>你目前是檢視權限，可以查看所有數據，但無法新增或修改。</div>
+    <div id="view"></div>
+  </main>
+</div>
+<div id="modal" class="overlay" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+'use strict';
+/* ================= backend ================= */
+// Public client key: safe to publish. Data is protected by the database's row-level security (sign-in + team allowlist).
+const SUPABASE_URL = 'https://bpovoxjdqdwhhlfwgpep.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwb3ZveGpkcWR3aGhsZndncGVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzNjE1NTQsImV4cCI6MjEwOTkzNzU1NH0.gM51zQ_K3O-N4SsnP_B1JKNXSM3WSimLiyzXV-pcsxs';
+const RECOVERY = /type=recovery/.test(location.hash);
+const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
+/* ================= constants ================= */
+const DEFAULT_CFG = {
+  currency: 'USD',
+  markets: [{ code: 'TW', name: '台灣' }, { code: 'US', name: '美國' }, { code: 'JP', name: '日本' }],
+  channels: ['Meta', 'Google Ads', 'TikTok', 'Apple Search Ads']
+};
+const METRICS = {
+  dl:   { name: '下載', fmt: 'int' },
+  sub:  { name: '新訂閱', fmt: 'int' },
+  act:  { name: '有效訂閱', fmt: 'int' },
+  rev:  { name: '營收', fmt: 'cur' },
+  ad:   { name: '廣告花費', fmt: 'cur', neutral: true },
+  roas: { name: 'ROAS', fmt: 'x', derive: c => c.ad ? c.rev / c.ad : null },
+  cpi:  { name: 'CPI', fmt: 'cur2', lower: true, derive: c => c.dl && c.ad ? c.ad / c.dl : null },
+  cpa:  { name: '單一訂閱成本', fmt: 'cur2', lower: true, derive: c => c.sub && c.ad ? c.ad / c.sub : null },
+  cvr:  { name: '訂閱轉換率', fmt: 'pct', derive: c => c.dl ? c.sub / c.dl : null }
+};
+const BUG_STATUS = [['new', '待處理', 'st-open'], ['doing', '處理中', 'st-active'], ['verify', '待驗證', 'st-check'], ['done', '已解決', 'st-done'], ['wont', '不處理', 'st-off']];
+const FEAT_STATUS = [['idea', '想法', 'st-open'], ['planned', '已規劃', 'st-check'], ['doing', '開發中', 'st-active'], ['done', '已上線', 'st-done'], ['wont', '不做', 'st-off']];
+const PRIORITY = [['P0', '緊急'], ['P1', '高'], ['P2', '中'], ['P3', '低']];
+const PLATFORMS = ['iOS', 'Android', 'Web', '全平台'];
+const PSTATUS = [['live', '上線中', 'st-done'], ['dev', '開發中', 'st-active'], ['paused', '暫停投放', 'st-check'], ['retired', '已下架', 'st-off']];
+const EVKINDS = [['release', '版本更新'], ['campaign', '行銷活動'], ['store', '商店變動'], ['other', '其他']];
+const CURRENCIES = ['USD', 'TWD', 'JPY', 'CNY', 'HKD', 'EUR', 'KRW'];
+const VIEWS = {
+  overview: ['總覽', '所有產品與市場的下載、訂閱、營收與廣告成效'],
+  data: ['數據輸入', '每日記錄下載、訂閱、營收與各通路廣告花費，或貼上 CSV 批次匯入'],
+  bugs: ['Bug 追蹤', '依產品與優先級追蹤問題，從回報到驗證結案'],
+  features: ['功能需求', '收集需求、累計提出次數，排出開發順序'],
+  products: ['產品', '所有 App 與產品，隨時可以再加入新的'],
+  settings: ['設定', '幣別、市場與廣告通路']
+};
+const isOpen = s => s !== 'done' && s !== 'wont';
+const SLOT = i => `var(--s${(i % 8) + 1})`;
+
+/* ================= state ================= */
+const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
+const UI = { view: 'overview', product: 'all', market: 'all', range: '30', metric: 'dl', group: 'auto', f: { bug: { st: 'open', pri: 'all', q: '' }, feature: { st: 'open', pri: 'all', q: '' } } };
+try { const saved = JSON.parse(localStorage.getItem('pws-ui') || 'null'); if (saved) Object.assign(UI, saved, { f: Object.assign(UI.f, saved.f || {}) }); } catch (e) {}
+function saveUI() { try { localStorage.setItem('pws-ui', JSON.stringify({ product: UI.product, market: UI.market, range: UI.range, metric: UI.metric, group: UI.group, f: UI.f })); } catch (e) {} }
+let db = null, canWrite = false, isOwner = false, me = '', members = [];
+const ROLES = [['owner', '擁有者', '可管理成員與所有資料'], ['editor', '編輯者', '可新增、修改資料'], ['viewer', '檢視者', '只能查看']];
+
+/* ================= helpers ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const TODAY = iso(new Date());
+const addDays = (s, n) => { const [y, m, d] = s.split('-').map(Number); return iso(new Date(y, m - 1, d + n)); };
+const addMonths = (mo, n) => { const [y, m] = mo.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
+const monthEnd = mo => { const [y, m] = mo.split('-').map(Number); return iso(new Date(y, m, 0)); };
+const WEEK = '日一二三四五六';
+const dayLabel = s => `${+s.slice(5, 7)}/${+s.slice(8)}`;
+const dayFull = s => { const [y, m, d] = s.split('-').map(Number); return `${y} 年 ${m} 月 ${d} 日（${WEEK[new Date(y, m - 1, d).getDay()]}）`; };
+const ago = t => { if (!t) return ''; const d = Math.floor((Date.now() - t) / 86400000); return d <= 0 ? '今天' : d === 1 ? '昨天' : d < 30 ? `${d} 天前` : d < 365 ? `${Math.floor(d / 30)} 個月前` : `${Math.floor(d / 365)} 年前`; };
+const adSum = a => a == null ? 0 : typeof a === 'number' ? a : Object.values(a).reduce((s, v) => s + (+v || 0), 0);
+const clone = o => JSON.parse(JSON.stringify(o || {}));
+const num = v => { if (v == null) return undefined; const s = String(v).replace(/[,\s$¥€₩]|NT|US/g, ''); if (s === '') return undefined; const n = parseFloat(s); return isFinite(n) ? n : undefined; };
+
+const _nf = {};
+function nf(key, opts) { return _nf[key] || (_nf[key] = new Intl.NumberFormat('zh-TW', opts)); }
+function fmtVal(v, f) {
+  if (v == null || !isFinite(v)) return '—';
+  const cur = S.cfg.currency || 'USD';
+  switch (f) {
+    case 'cur': return nf('c0' + cur, { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(v);
+    case 'cur2': return nf('c2' + cur, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+    case 'x': return v.toFixed(2) + 'x';
+    case 'pct': return (v * 100).toFixed(1) + '%';
+    default: return nf('i', { maximumFractionDigits: 0 }).format(Math.round(v));
+  }
+}
+function fmtAxis(v, f) {
+  if (f === 'x') return v.toFixed(v < 10 ? 1 : 0) + 'x';
+  if (f === 'pct') return Math.round(v * 1000) / 10 + '%';
+  if (f === 'cur2') return v.toFixed(v < 10 ? 2 : 1);
+  return nf('cmp', { notation: 'compact', maximumFractionDigits: 1 }).format(v);
+}
+const mName = code => (S.cfg.markets.find(m => m.code === code) || {}).name || code;
+const mIndex = code => { const i = S.cfg.markets.findIndex(m => m.code === code); return i < 0 ? S.cfg.markets.length + code.charCodeAt(0) : i; };
+const pName = id => S.products.get(id)?.name || '（已刪除的產品）';
+const pColor = id => S.products.has(id) ? SLOT(S.products.get(id).slot || 0) : 'var(--muted)';
+const productsSorted = () => [...S.products.values()].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+const stMeta = (type, st) => (type === 'bug' ? BUG_STATUS : FEAT_STATUS).find(s => s[0] === st) || ['', st, 'st-open'];
+
+function toast(msg, kind) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (kind ? ' ' + kind : ''); t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, kind === 'err' ? 4200 : 2200);
+}
+function setSync(state) {
+  const el = $('#sync');
+  const map = { ok: ['已同步', 'ok'], slow: ['資料庫還沒回應，資料可能不是最新', 'warn'], offline: ['離線預覽・資料不會儲存', 'err'], err: ['同步中斷，請重新整理', 'err'] };
+  const [txt, cls] = map[state] || ['連線中…', ''];
+  el.textContent = txt; el.className = cls;
+}
+
+/* ================= database ================= */
+const chains = new Map();
+function serial(path, fn) { const p = (chains.get(path) || Promise.resolve()).then(fn, fn); chains.set(path, p.catch(() => {})); return p; }
+async function W(fn, okMsg) {
+  if (!db) { toast('尚未登入，資料無法儲存', 'err'); return false; }
+  if (!canWrite) { toast('你目前只有檢視權限', 'err'); return false; }
+  try { await fn(); if (okMsg) toast(okMsg); return true; }
+  catch (e) {
+    const c = e && e.code; console.warn(e);
+    if (c === 'invalid_argument') { toast('儲存被拒絕：可能沒有編輯權限，或資料格式不正確', 'err'); }
+    else if (c === 'quota_exceeded') toast('資料庫容量已滿，請先刪除部分舊資料', 'err');
+    else if (c === 'resource_exhausted') toast('操作太頻繁，稍等幾秒再試', 'err');
+    else toast('暫時無法儲存，請稍後再試', 'err');
+    return false;
+  }
+}
+function metricId(p, m, date) { return `${p}__${m}__${date.slice(0, 7)}`; }
+function getDay(p, m, date) { return S.metrics.get(metricId(p, m, date))?.d?.[date.slice(8)] || null; }
+function writeDays(p, m, mo, mutate) {
+  const id = `${p}__${m}__${mo}`;
+  return serial('metrics/' + id, async () => {
+    const body = S.metrics.has(id) ? clone(S.metrics.get(id)) : { p, m, mo, d: {} };
+    body.d = body.d || {}; mutate(body.d); body.updatedAt = Date.now();
+    if (S.products.get(p)?.sample) body.sample = true;
+    await db.doc('metrics/' + id).set(body);
+    S.metrics.set(id, body);
+  });
+}
+
+/* ----- Supabase adapter: the rest of the page talks to `db.doc(path)` / `db.collection(name)` ----- */
+const genId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 20);
+const mapOf = c => c === 'products' ? S.products : c === 'issues' ? S.issues : c === 'events' ? S.events : null;
+function applyDoc(c, id, data) {
+  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; return; }
+  const m = mapOf(c); if (!m) return;
+  if (data) m.set(id, Object.assign({}, data, { id })); else m.delete(id);
+}
+function rowToRec(r) {
+  const rec = {};
+  if (r.downloads != null) rec.dl = +r.downloads;
+  if (r.new_subs != null) rec.sub = +r.new_subs;
+  if (r.active_subs != null) rec.act = +r.active_subs;
+  if (r.revenue != null) rec.rev = +r.revenue;
+  if (r.ad_spend != null) rec.ad = r.ad_spend;
+  return rec;
+}
+function applyRow(r, removed) {
+  const mo = String(r.date).slice(0, 7), dd = String(r.date).slice(8, 10), key = `${r.product_id}__${r.market}__${mo}`;
+  let doc = S.metrics.get(key);
+  if (removed) { if (doc && doc.d) { delete doc.d[dd]; if (!Object.keys(doc.d).length) S.metrics.delete(key); } return; }
+  if (!doc) { doc = { p: r.product_id, m: r.market, mo, d: {} }; S.metrics.set(key, doc); }
+  if (r.sample) doc.sample = true;
+  doc.d[dd] = rowToRec(r);
+}
+function dbErr(e) {
+  const msg = (e && e.message) || '';
+  const code = e && (e.code === '42501' || /row-level security|permission denied/i.test(msg)) ? 'invalid_argument' : (e && e.status === 429 ? 'resource_exhausted' : 'unavailable');
+  return { code, message: msg };
+}
+async function q(promise) { const res = await promise; if (res.error) throw dbErr(res.error); return res; }
+function docRef(path) {
+  const [c, id] = path.split('/');
+  if (c === 'metrics') return metricsRef(id);
+  return {
+    id,
+    async set(data) {
+      const body = Object.assign({}, data); delete body.id;
+      await q(sb.from('docs').upsert({ collection: c, id, data: body, updated_at: new Date().toISOString() }));
+      applyDoc(c, id, body); schedule();
+    },
+    async update(patch) {
+      const cur = c === 'cfg' ? S.cfg : (mapOf(c).get(id) || {});
+      return this.set(Object.assign({}, cur, patch));
+    },
+    async delete() { await q(sb.from('docs').delete().match({ collection: c, id })); applyDoc(c, id, null); schedule(); }
+  };
+}
+function metricsRef(key) {
+  const [p, m, mo] = key.split('__');
+  return {
+    id: key,
+    async set(body) {
+      const prev = (S.metrics.get(key) || {}).d || {}, next = body.d || {};
+      const now = new Date().toISOString();
+      const rows = Object.entries(next).filter(([dd, r]) => JSON.stringify(r) !== JSON.stringify(prev[dd])).map(([dd, r]) => ({
+        product_id: p, market: m, date: `${mo}-${dd}`,
+        downloads: r.dl ?? null, new_subs: r.sub ?? null, active_subs: r.act ?? null, revenue: r.rev ?? null,
+        ad_spend: r.ad == null ? null : (typeof r.ad === 'number' ? { '未分類': r.ad } : r.ad),
+        sample: !!body.sample, updated_at: now
+      }));
+      const gone = Object.keys(prev).filter(dd => !next[dd]).map(dd => `${mo}-${dd}`);
+      for (let i = 0; i < rows.length; i += 500) await q(sb.from('daily_metrics').upsert(rows.slice(i, i + 500)));
+      if (gone.length) await q(sb.from('daily_metrics').delete().eq('product_id', p).eq('market', m).in('date', gone));
+      S.metrics.set(key, { p, m, mo, d: clone(next), sample: body.sample }); schedule();
+    },
+    async delete() {
+      await q(sb.from('daily_metrics').delete().eq('product_id', p).eq('market', m).gte('date', mo + '-01').lte('date', monthEnd(mo)));
+      S.metrics.delete(key); schedule();
+    }
+  };
+}
+function collRef(c) { return { doc: id => docRef(c + '/' + (id || genId())), async add(data) { const r = docRef(c + '/' + genId()); await r.set(data); return r; } }; }
+
+async function fetchAll(table) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from(table).select('*').range(from, from + 999);
+    if (error) throw error;
+    out.push(...data); if (data.length < 1000) break;
+  }
+  return out;
+}
+async function loadAll() {
+  const [docs, rows] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics')]);
+  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.cfg = DEFAULT_CFG;
+  docs.forEach(d => applyDoc(d.collection, d.id, d.data));
+  rows.forEach(r => applyRow(r));
+  S.loadedAt = Date.now();
+}
+async function loadMembers() {
+  const { data, error } = await sb.from('members').select('*').order('created_at');
+  if (error) return null;
+  members = data || [];
+  const mine = members.find(x => x.email === me);
+  canWrite = !!mine && mine.role !== 'viewer'; isOwner = !!mine && mine.role === 'owner';
+  return mine || null;
+}
+function subscribeLive() {
+  sb.channel('workstation')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'docs' }, pl => { const r = pl.eventType === 'DELETE' ? pl.old : pl.new; if (r && r.collection) { applyDoc(r.collection, r.id, pl.eventType === 'DELETE' ? null : r.data); schedule(); } })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_metrics' }, pl => { if (pl.eventType === 'DELETE') { if (pl.old && pl.old.date) applyRow(pl.old, true); } else applyRow(pl.new); schedule(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => { const mine = await loadMembers(); if (!mine) { location.reload(); return; } built.view = null; schedule(); })
+    .subscribe(st => { if (st === 'SUBSCRIBED') setSync('ok'); else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT') setSync('slow'); });
+  // Phones pause background tabs; refresh when the page comes back.
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && db && Date.now() - (S.loadedAt || 0) > 60000) { try { await loadAll(); built.view = null; schedule(); } catch (e) {} }
+  });
+}
+
+/* ----- sign-in ----- */
+let authMode = 'signin';
+const AUTH_TEXT = {
+  signin: ['登入', '用團隊白名單裡的 Email 登入。', '登入'],
+  signup: ['註冊帳號', '請用已經被管理員加入白名單的 Email 註冊，密碼至少 8 個字元。', '註冊'],
+  reset: ['重設密碼', '輸入 Email，我們會寄一封重設密碼的信給你。', '寄出重設信'],
+  newpw: ['設定新密碼', '請輸入新的密碼（至少 8 個字元）。', '儲存新密碼'],
+  sent: ['請收信', '', ''],
+  denied: ['尚未取得權限', '', ''],
+  error: ['無法連線', '登入服務暫時無法載入，請檢查網路後重新整理頁面。', '']
+};
+function showAuth(mode, msg, isErr) {
+  authMode = mode;
+  $('.app').hidden = true; $('#auth').hidden = false;
+  const [title, sub, btn] = AUTH_TEXT[mode];
+  $('#auth-title').textContent = title;
+  $('#auth-sub').textContent = mode === 'denied' ? `你目前登入的帳號是 ${me}，但這個 Email 還不在團隊白名單裡。請把它告訴管理員，加入後再按「重新檢查」。` : mode === 'sent' ? (msg || '') : sub;
+  $('#af-email-wrap').hidden = !['signin', 'signup', 'reset'].includes(mode);
+  $('#af-pw-wrap').hidden = !['signin', 'signup', 'newpw'].includes(mode);
+  $('#af-pw').autocomplete = mode === 'signin' ? 'current-password' : 'new-password';
+  $('#af-pw-label').textContent = mode === 'newpw' ? '新密碼' : '密碼';
+  $('#af-go').hidden = !btn; $('#af-go').textContent = btn || ''; $('#af-go').disabled = false;
+  const m = $('#af-msg'); m.textContent = mode === 'sent' ? '' : (msg || ''); m.className = 'auth-msg' + (isErr ? ' err' : '');
+  const links = {
+    signin: [['signup', '註冊新帳號'], ['reset', '忘記密碼']],
+    signup: [['signin', '已經有帳號？登入']],
+    reset: [['signin', '回到登入']],
+    sent: [['signin', '回到登入']],
+    newpw: [],
+    denied: [['recheck', '重新檢查'], ['signout', '登出，換一個帳號']],
+    error: []
+  }[mode];
+  $('#auth-links').innerHTML = links.map(([k, l]) => `<button type="button" class="linkbtn" data-auth="${k}">${l}</button>`).join('');
+  const f = $('#auth-form input:not([hidden])'); if (f && !$('#af-email-wrap').hidden) setTimeout(() => $('#af-email').focus(), 30);
+}
+function authErr(e) {
+  const m = (e && e.message) || '';
+  if (/invalid login credentials/i.test(m)) return 'Email 或密碼不正確。';
+  if (/email not confirmed/i.test(m)) return '這個帳號還沒完成 Email 驗證，請先點確認信裡的連結。';
+  if (/already registered|already exists/i.test(m)) return '這個 Email 已經註冊過了，請直接登入。';
+  if (/password.*(at least|short|weak)/i.test(m)) return '密碼太短或太簡單，請至少 8 個字元。';
+  if (/rate limit|too many/i.test(m)) return '嘗試次數太多，請過幾分鐘再試。';
+  if (/valid email|invalid.*email/i.test(m)) return 'Email 格式不正確。';
+  return '發生錯誤：' + m;
+}
+$('#auth-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = $('#af-email').value.trim().toLowerCase(), pw = $('#af-pw').value;
+  const say = (t, err) => { const m = $('#af-msg'); m.textContent = t; m.className = 'auth-msg' + (err ? ' err' : ''); };
+  const needEmail = ['signin', 'signup', 'reset'].includes(authMode), needPw = ['signin', 'signup', 'newpw'].includes(authMode);
+  if (needEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { say('請輸入正確的 Email。', true); return; }
+  if (needPw && pw.length < 8) { say('密碼至少需要 8 個字元。', true); return; }
+  const btn = $('#af-go'); btn.disabled = true; say('處理中…');
+  const redirect = location.origin + location.pathname;
+  try {
+    if (authMode === 'signin') {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
+      if (error) throw error;
+      await startSession(data.session);
+    } else if (authMode === 'signup') {
+      const { data, error } = await sb.auth.signUp({ email, password: pw, options: { emailRedirectTo: redirect } });
+      if (error) throw error;
+      if (data.session) await startSession(data.session);
+      else showAuth('sent', `確認信已寄到 ${email}。請打開信件、點裡面的連結完成驗證，再回到這裡登入。沒看到的話請檢查垃圾郵件匣。`);
+    } else if (authMode === 'reset') {
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirect });
+      if (error) throw error;
+      showAuth('sent', `如果 ${email} 有註冊過，重設密碼的信已經寄出。請點信裡的連結設定新密碼。`);
+    } else if (authMode === 'newpw') {
+      const { data, error } = await sb.auth.updateUser({ password: pw });
+      if (error) throw error;
+      toast('密碼已更新');
+      const { data: s } = await sb.auth.getSession();
+      await startSession(s.session || (data && data.session));
+    }
+  } catch (err) { say(authErr(err), true); }
+  finally { btn.disabled = false; }
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-auth]'); if (!b) return;
+  const k = b.dataset.auth;
+  if (k === 'signout') { await sb.auth.signOut(); location.reload(); return; }
+  if (k === 'recheck') { const { data } = await sb.auth.getSession(); S.starting = false; if (data.session) await startSession(data.session); else showAuth('signin'); return; }
+  showAuth(k);
+});
+
+async function startSession(session) {
+  if (!session || S.starting) return;
+  S.starting = true;
+  try {
+    me = String(session.user.email || '').toLowerCase();
+    const mine = await loadMembers();
+    if (!mine) { showAuth('denied'); return; }
+    db = { doc: docRef, collection: collRef };
+    $('#auth').hidden = true; $('.app').hidden = false;
+    $('#me-email').textContent = me;
+    S.timer = setTimeout(() => { if (!S.ready) setSync('slow'); }, 10000);
+    renderAll();
+    await loadAll();
+    S.ready = true; clearTimeout(S.timer); setSync('ok');
+    built.view = null; renderAll();
+    subscribeLive();
+  } catch (e) {
+    console.warn(e); showAuth('signin', '讀取資料失敗，請重新整理再試一次。', true);
+  } finally { S.starting = false; }
+}
+
+async function boot() {
+  if (!sb) { showAuth('error'); return; }
+  sb.auth.onAuthStateChange((ev, session) => {
+    if (ev === 'PASSWORD_RECOVERY') { showAuth('newpw'); return; }
+    if (ev === 'SIGNED_OUT') { db = null; me = ''; }
+    if (ev === 'SIGNED_IN' && session && !db && !RECOVERY && authMode !== 'newpw') setTimeout(() => startSession(session), 0);
+  });
+  if (RECOVERY) { showAuth('newpw'); return; }
+  const { data } = await sb.auth.getSession();
+  if (data.session) await startSession(data.session); else showAuth('signin');
+}
+
+/* ================= aggregation ================= */
+function period() {
+  if (UI.range === '12m') {
+    const endMo = TODAY.slice(0, 7), startMo = addMonths(endMo, -11);
+    const pEndMo = addMonths(endMo, -12);
+    const pend = [pEndMo + '-' + TODAY.slice(8), monthEnd(pEndMo)].sort()[0];
+    return { start: startMo + '-01', end: TODAY, gran: 'month', pstart: addMonths(startMo, -12) + '-01', pend, label: '較前 12 個月' };
+  }
+  const n = +UI.range, start = addDays(TODAY, -(n - 1));
+  return { start, end: TODAY, gran: 'day', pstart: addDays(start, -n), pend: addDays(start, -1), label: `較前 ${n} 天` };
+}
+function makeBuckets(start, end, gran) {
+  if (gran === 'all') return [{ key: 'all', label: '', full: '' }];
+  const out = [];
+  if (gran === 'day') { for (let d = start; d <= end; d = addDays(d, 1)) out.push({ key: d, label: dayLabel(d), full: dayFull(d) }); }
+  else { for (let mo = start.slice(0, 7); mo <= end.slice(0, 7); mo = addMonths(mo, 1)) out.push({ key: mo, label: `${+mo.slice(5)}月`, full: `${mo.slice(0, 4)} 年 ${+mo.slice(5)} 月` }); }
+  return out;
+}
+const blankCell = () => ({ dl: 0, sub: 0, rev: 0, ad: 0, act: 0, has: false, hasAct: false });
+function aggregate({ start, end, gran, groupBy, p = UI.product, m = UI.market }) {
+  const B = makeBuckets(start, end, gran);
+  const bi = new Map(B.map((b, i) => [b.key, i]));
+  const idx = gran === 'all' ? () => 0 : gran === 'day' ? d => bi.get(d) : d => bi.get(d.slice(0, 7));
+  const groups = new Map();
+  const G = k => { let g = groups.get(k); if (!g) { g = { key: k, s: B.map(blankCell), acts: new Map() }; groups.set(k, g); } return g; };
+  const ms = start.slice(0, 7), me = end.slice(0, 7);
+  for (const doc of S.metrics.values()) {
+    if (!doc || !S.products.has(doc.p)) continue;
+    if (p !== 'all' && doc.p !== p) continue;
+    if (m !== 'all' && doc.m !== m) continue;
+    if (doc.mo < ms || doc.mo > me) continue;
+    const g = G(groupBy === 'product' ? doc.p : groupBy === 'market' ? doc.m : 'total');
+    const combo = doc.p + '|' + doc.m;
+    for (const [dd, r] of Object.entries(doc.d || {})) {
+      const date = doc.mo + '-' + dd;
+      if (date < start || date > end || !r) continue;
+      const i = idx(date); if (i == null) continue;
+      const c = g.s[i];
+      c.dl += +r.dl || 0; c.sub += +r.sub || 0; c.rev += +r.rev || 0; c.ad += adSum(r.ad); c.has = true;
+      if (r.act != null && r.act !== '') {
+        let a = g.acts.get(combo); if (!a) { a = B.map(() => null); g.acts.set(combo, a); }
+        if (!a[i] || a[i].date < date) a[i] = { date, v: +r.act || 0 };
+      }
+    }
+  }
+  for (const g of groups.values()) {
+    for (const a of g.acts.values()) { let last = null; a.forEach((x, i) => { if (x) last = x.v; if (last != null) { g.s[i].act += last; g.s[i].hasAct = true; } }); }
+  }
+  return { B, groups };
+}
+function cellVal(c, key) {
+  if (!c) return null;
+  const M = METRICS[key];
+  if (M.derive) return c.has ? M.derive(c) : null;
+  if (key === 'act') return c.hasAct ? c.act : null;
+  return c.has ? c[key] : null;
+}
+function mergeCells(a, b) { return { dl: a.dl + b.dl, sub: a.sub + b.sub, rev: a.rev + b.rev, ad: a.ad + b.ad, act: a.act + b.act, has: a.has || b.has, hasAct: a.hasAct || b.hasAct }; }
+function channelTotals(start, end) {
+  const out = {};
+  for (const doc of S.metrics.values()) {
+    if (!doc || !S.products.has(doc.p)) continue;
+    if (UI.product !== 'all' && doc.p !== UI.product) continue;
+    if (UI.market !== 'all' && doc.m !== UI.market) continue;
+    if (doc.mo < start.slice(0, 7) || doc.mo > end.slice(0, 7)) continue;
+    for (const [dd, r] of Object.entries(doc.d || {})) {
+      const date = doc.mo + '-' + dd; if (date < start || date > end || !r || r.ad == null) continue;
+      if (typeof r.ad === 'number') out['未分類'] = (out['未分類'] || 0) + r.ad;
+      else for (const [ch, v] of Object.entries(r.ad)) out[ch] = (out[ch] || 0) + (+v || 0);
+    }
+  }
+  return out;
+}
+
+/* ================= charts ================= */
+function niceMax(v) { if (!(v > 0)) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; }
+function drawLine(host, cfg) {
+  host._cfg = cfg;
+  if (!host._ro && window.ResizeObserver) { host._ro = new ResizeObserver(() => { if (host._w !== host.clientWidth && host.isConnected) paintLine(host); }); host._ro.observe(host); }
+  paintLine(host);
+}
+function paintLine(host) {
+  const cfg = host._cfg, W = Math.max(260, host.clientWidth || 600), H = cfg.height || 240;
+  host._w = host.clientWidth;
+  const m = { l: 52, r: 12, t: 12, b: 24 }, n = cfg.labels.length;
+  let max = 0, any = false;
+  cfg.series.forEach(s => s.values.forEach(v => { if (v != null) { any = true; if (v > max) max = v; } }));
+  const ymax = niceMax(max * 1.04);
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const x = i => m.l + (n <= 1 ? iw / 2 : i * iw / (n - 1));
+  const y = v => m.t + ih * (1 - v / ymax);
+  let g = '';
+  for (let k = 0; k <= 4; k++) { const v = ymax * k / 4, yy = y(v).toFixed(1); g += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}" class="${k ? 'gl' : 'base'}"/><text x="${m.l - 8}" y="${+yy + 3.5}" text-anchor="end">${fmtAxis(v, cfg.fmt)}</text>`; }
+  const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(iw / 58))));
+  for (let i = 0; i < n; i += step) g += `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(cfg.labels[i])}</text>`;
+  (cfg.events || []).forEach(e => { const xx = x(e.i).toFixed(1); g += `<line x1="${xx}" x2="${xx}" y1="${m.t}" y2="${H - m.b}" class="ev"/><path d="M${xx - 4} ${m.t - 6}h8l-4 6z" class="evm"/>`; });
+  cfg.series.forEach(s => {
+    let d = '', pen = false, pts = 0, lastX = 0, firstX = null, gap = false;
+    s.values.forEach((v, i) => { if (v == null) { pen = false; gap = true; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); if (firstX == null) firstX = x(i); lastX = x(i); pen = true; pts++; });
+    if (!d) return;
+    if (cfg.area && cfg.series.length === 1 && !gap && pts > 1) g += `<path d="${d}L${lastX.toFixed(1)} ${y(0)}L${firstX.toFixed(1)} ${y(0)}Z" style="fill:${s.color};opacity:.10"/>`;
+    g += `<path d="${d}" fill="none" style="stroke:${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (pts === 1 || n <= 14) s.values.forEach((v, i) => { if (v != null) g += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.5" style="fill:${s.color}"/>`; });
+  });
+  host.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.aria || '')}">${g}<g class="hov"></g><rect class="hit" x="${m.l}" y="0" width="${iw}" height="${H}" fill="transparent"/></svg><div class="tip" hidden></div>${any ? '' : `<div class="empty">${cfg.emptyText || '這段期間還沒有數據'}</div>`}`;
+  if (!any) return;
+  const svg = host.querySelector('svg'), hov = svg.querySelector('.hov'), tip = host.querySelector('.tip');
+  const show = ev => {
+    const r = svg.getBoundingClientRect();
+    let i = n <= 1 ? 0 : Math.round((ev.clientX - r.left - m.l) / (iw / (n - 1)));
+    i = Math.max(0, Math.min(n - 1, i));
+    const xx = x(i).toFixed(1);
+    let s = `<line x1="${xx}" x2="${xx}" y1="${m.t}" y2="${H - m.b}" class="xh"/>`;
+    const rows = cfg.series.map(se => ({ name: se.name, color: se.color, v: se.values[i] }));
+    rows.forEach(rw => { if (rw.v != null) s += `<circle cx="${xx}" cy="${y(rw.v).toFixed(1)}" r="4.5" style="fill:${rw.color};stroke:var(--panel);stroke-width:2"/>`; });
+    hov.innerHTML = s;
+    const evs = (cfg.events || []).filter(e => e.i === i);
+    tip.innerHTML = `<div class="tt">${esc(cfg.full ? cfg.full[i] : cfg.labels[i])}</div>` +
+      rows.sort((a, b) => (b.v ?? -1) - (a.v ?? -1)).slice(0, 9).map(rw => `<div class="tr"><i style="background:${rw.color}"></i><span>${esc(rw.name)}</span><b>${fmtVal(rw.v, cfg.fmt)}</b></div>`).join('') +
+      (evs.length ? `<div class="te">${evs.map(e => '◆ ' + esc(e.title)).join('<br>')}</div>` : '');
+    tip.hidden = false;
+    const tw = tip.offsetWidth;
+    let left = +xx + 14; if (left + tw > W) left = +xx - tw - 14; if (left < 0) left = 4;
+    tip.style.left = left + 'px'; tip.style.top = m.t + 'px';
+  };
+  const hide = () => { hov.innerHTML = ''; tip.hidden = true; };
+  const hit = svg.querySelector('.hit');
+  hit.addEventListener('pointermove', show); hit.addEventListener('pointerdown', show); hit.addEventListener('pointerleave', hide);
+}
+function spark(values, color) {
+  const vs = values.map(v => v == null ? null : v), real = vs.filter(v => v != null);
+  if (real.length < 2) return '<svg class="spark" aria-hidden="true"></svg>';
+  const W = 200, H = 30, max = Math.max(...real), min = Math.min(0, ...real), n = vs.length;
+  const x = i => (i * (W - 4) / (n - 1)) + 2, y = v => H - 3 - (H - 6) * ((v - min) / ((max - min) || 1));
+  let d = '', pen = false, li = 0;
+  vs.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; li = i; });
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" style="stroke:${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"/><circle cx="${x(li)}" cy="${y(vs[li])}" r="2.4" style="fill:${color}"/></svg>`;
+}
+function legendHTML(series) { return series.length < 2 ? '' : `<div class="legend">${series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>`; }
+
+/* ================= render: shell ================= */
+let pending = false;
+function schedule() { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; renderAll(); }); setTimeout(() => { if (pending) { pending = false; renderAll(); } }, 120); }
+function sig() { return JSON.stringify([S.ready, canWrite, productsSorted().map(p => [p.id, p.name]), S.cfg]); }
+let built = { view: null, sig: null };
+
+function renderAll() {
+  const v = UI.view;
+  if (UI.product !== 'all' && S.ready && !S.products.has(UI.product)) UI.product = 'all';
+  // nav
+  $$('.nav a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
+  const openBugs = [...S.issues.values()].filter(i => i.type === 'bug' && isOpen(i.status) && S.products.has(i.product)).length;
+  const openFeat = [...S.issues.values()].filter(i => i.type === 'feature' && isOpen(i.status) && S.products.has(i.product)).length;
+  $('#nb-bugs').textContent = openBugs || ''; $('#nb-feat').textContent = openFeat || '';
+  $('#roster').innerHTML = productsSorted().map(p => `<button data-act="pickproduct" data-id="${p.id}" class="${UI.product === p.id ? 'on' : ''}"><i class="dot" style="background:${SLOT(p.slot || 0)}"></i>${esc(p.name)}</button>`).join('') || '<div class="hint" style="padding:0 10px">還沒有產品</div>';
+  $('.roster .addp').hidden = !canWrite || !db;
+  $('#foot').textContent = S.ready && !S.offline ? `${S.products.size} 個產品・${S.cfg.markets.length} 個市場` : '';
+  $('#ro').hidden = canWrite || !db;
+  // header
+  $('#vt').textContent = VIEWS[v][0]; $('#vs').textContent = VIEWS[v][1];
+  const gp = $('#g-p');
+  gp.innerHTML = `<option value="all">全部產品</option>` + productsSorted().map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  gp.value = UI.product;
+  const gm = $('#g-m');
+  const extra = new Set(); for (const d of S.metrics.values()) if (d && !S.cfg.markets.some(m => m.code === d.m)) extra.add(d.m);
+  gm.innerHTML = `<option value="all">全部市場</option>` + S.cfg.markets.map(m => `<option value="${esc(m.code)}">${esc(m.name)}（${esc(m.code)}）</option>`).join('') + [...extra].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  gm.value = UI.market; if (gm.value !== UI.market) { UI.market = 'all'; gm.value = 'all'; }
+  const showM = v === 'overview' || v === 'data';
+  $('#g-m-wrap').hidden = !showM; $('#g-r').hidden = v !== 'overview';
+  $('#g-p').closest('.sel').hidden = v === 'settings' || v === 'products';
+  $$('#g-r button').forEach(b => b.classList.toggle('on', b.dataset.r === UI.range));
+  // view
+  const el = $('#view'), s = sig();
+  const rebuild = built.view !== v || (built.sig !== s && !(v === 'settings' && el.contains(document.activeElement)));
+  if (v === 'overview') renderOverview(el);
+  else if (v === 'products') renderProducts(el);
+  else if (v === 'data') { if (rebuild) buildData(el); updateData(); }
+  else if (v === 'bugs' || v === 'features') { if (rebuild) buildIssues(el, v === 'bugs' ? 'bug' : 'feature'); updateIssues(v === 'bugs' ? 'bug' : 'feature'); }
+  else if (v === 'settings') { if (rebuild) buildSettings(el); updateSettings(); }
+  if (rebuild) built = { view: v, sig: s };
+}
+
+function loadingHTML() { return `<div class="card empty-state"><h2>正在載入資料…</h2><p>第一次開啟可能需要幾秒鐘。</p></div>`; }
+function onboardingHTML() {
+  return `<div class="card empty-state"><h2>從第一個產品開始</h2>
+    <p>工作站以「產品」為單位整理所有數據。加入產品之後，就能記錄每天在各市場的下載、訂閱、營收與廣告花費，並追蹤 Bug 和功能需求。</p>
+    <ol class="steps"><li>新增產品（App、網站或任何要追蹤的產品）</li><li>到「設定」確認幣別、市場與廣告通路</li><li>在「數據輸入」記錄每日數字，或從 App Store Connect、Google Play、RevenueCat 匯出 CSV 貼上</li></ol>
+    ${canWrite ? '<button class="btn primary" data-act="newproduct">＋ 新增產品</button>' : ''}</div>`;
+}
+
+/* ================= view: overview ================= */
+function renderOverview(el) {
+  if (!S.ready) { el.innerHTML = loadingHTML(); return; }
+  if (!S.products.size) { el.innerHTML = onboardingHTML(); return; }
+  const P = period();
+  const cur = aggregate({ start: P.start, end: P.end, gran: 'all', groupBy: 'total' }).groups.get('total')?.s[0] || blankCell();
+  const prv = aggregate({ start: P.pstart, end: P.pend, gran: 'all', groupBy: 'total' }).groups.get('total')?.s[0] || blankCell();
+  const daily = aggregate({ start: P.start, end: P.end, gran: P.gran, groupBy: 'total' });
+  const tot = daily.groups.get('total');
+  const tiles = ['dl', 'sub', 'act', 'rev', 'ad', 'roas', 'cpi', 'cvr'].map(k => {
+    const M = METRICS[k], v = cellVal(cur, k), pv = cellVal(prv, k);
+    let delta = '<b class="flat">—</b>';
+    if (v != null && pv) {
+      const ch = (v - pv) / Math.abs(pv), up = ch >= 0;
+      const cls = Math.abs(ch) < 0.005 || M.neutral ? 'flat' : (up !== !!M.lower ? 'good' : 'bad');
+      delta = `<b class="${cls}">${up ? '▲' : '▼'} ${Math.abs(ch * 100).toFixed(1)}%</b>`;
+    }
+    const sv = tot ? tot.s.map(c => cellVal(c, k)) : [];
+    return `<div class="kpi"><div class="kl">${M.name}${k === 'act' ? '<span class="hint">（期末）</span>' : ''}</div><div class="kv" title="${esc(fmtVal(v, M.fmt))}">${fmtVal(v, M.fmt)}</div><div class="kd">${delta}<span>${P.label}</span></div>${spark(sv, 'var(--s1)')}</div>`;
+  }).join('');
+
+  // trend
+  const autoG = UI.product === 'all' ? 'product' : UI.market === 'all' ? 'market' : 'total';
+  const gb = UI.group === 'auto' ? autoG : UI.group;
+  const tr = aggregate({ start: P.start, end: P.end, gran: P.gran, groupBy: gb });
+  let groups = [...tr.groups.values()];
+  const totOf = g => g.s.reduce((a, c) => a + (c.rev + c.dl + c.ad), 0);
+  groups.sort((a, b) => gb === 'product' ? ((S.products.get(a.key)?.slot ?? 0) - (S.products.get(b.key)?.slot ?? 0)) : gb === 'market' ? mIndex(a.key) - mIndex(b.key) : 0);
+  if (groups.length > 8) {
+    const keep = [...groups].sort((a, b) => totOf(b) - totOf(a)).slice(0, 7);
+    const rest = groups.filter(g => !keep.includes(g));
+    const other = { key: '__other', s: tr.B.map((_, i) => rest.reduce((acc, g) => mergeCells(acc, g.s[i]), blankCell())) };
+    groups = groups.filter(g => keep.includes(g)).concat(other);
+  }
+  const series = groups.map(g => ({
+    name: g.key === '__other' ? '其他' : gb === 'product' ? pName(g.key) : gb === 'market' ? mName(g.key) : '合計',
+    color: g.key === '__other' ? 'var(--muted)' : gb === 'product' ? pColor(g.key) : gb === 'market' ? SLOT(mIndex(g.key)) : 'var(--s1)',
+    values: g.s.map(c => cellVal(c, UI.metric))
+  }));
+  const evs = [...S.events.values()].filter(e => e.date >= P.start && e.date <= P.end && (UI.product === 'all' || !e.product || e.product === 'all' || e.product === UI.product))
+    .map(e => ({ i: tr.B.findIndex(b => b.key === (P.gran === 'day' ? e.date : e.date.slice(0, 7))), title: `${e.title}${e.product && e.product !== 'all' && UI.product === 'all' ? '（' + pName(e.product) + '）' : ''}` })).filter(e => e.i >= 0);
+
+  // revenue vs ad
+  const ra = tot ? [
+    { name: '營收', color: 'var(--s3)', values: tot.s.map(c => cellVal(c, 'rev')) },
+    { name: '廣告花費', color: 'var(--s2)', values: tot.s.map(c => cellVal(c, 'ad')) }
+  ] : [];
+
+  // channels
+  const chs = Object.entries(channelTotals(P.start, P.end)).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  const chTotal = chs.reduce((s, [, v]) => s + v, 0), chMax = chs.length ? chs[0][1] : 1;
+  const chHTML = chs.length ? `<div class="bars">${chs.map(([k, v]) => `<div class="bar"><span class="lab" title="${esc(k)}">${esc(k)}</span><div class="trk"><div class="fil" style="width:${(v / chMax * 100).toFixed(1)}%"></div></div><span class="val">${fmtVal(v, 'cur')}<small>${(v / chTotal * 100).toFixed(0)}%</small></span></div>`).join('')}</div>` : '<p class="hint">這段期間沒有廣告花費紀錄。</p>';
+
+  // market table
+  const byM = [...aggregate({ start: P.start, end: P.end, gran: 'all', groupBy: 'market' }).groups.values()].map(g => ({ k: g.key, c: g.s[0] })).sort((a, b) => b.c.rev - a.c.rev || b.c.dl - a.c.dl);
+  const mRev = byM.reduce((s, r) => s + r.c.rev, 0) || 1;
+  const rowCells = c => `<td class="n">${fmtVal(cellVal(c, 'dl'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'sub'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'rev'), 'cur')}</td><td class="n">${fmtVal(cellVal(c, 'ad'), 'cur')}</td><td class="n">${fmtVal(cellVal(c, 'cpi'), 'cur2')}</td><td class="n">${fmtVal(cellVal(c, 'roas'), 'x')}</td><td class="n">${fmtVal(cellVal(c, 'cvr'), 'pct')}</td>`;
+  const thead = first => `<thead><tr><th>${first}</th><th class="n">下載</th><th class="n">新訂閱</th><th class="n">營收</th><th class="n">廣告花費</th><th class="n">CPI</th><th class="n">ROAS</th><th class="n">轉換率</th></tr></thead>`;
+  const mTable = byM.length ? `<div class="tw"><table class="t">${thead('市場')}<tbody>${byM.map(r => `<tr class="click" data-act="pickmarket" data-id="${esc(r.k)}"><td><i class="dot" style="background:${SLOT(mIndex(r.k))}"></i> ${esc(mName(r.k))} <span class="mono hint">${esc(r.k)}</span><span class="share" title="營收佔比"><i style="width:${(r.c.rev / mRev * 100).toFixed(1)}%"></i></span></td>${rowCells(r.c)}</tr>`).join('')}</tbody></table></div>` : '<p class="hint">這段期間沒有數據。</p>';
+
+  let pTable = '';
+  if (UI.product === 'all') {
+    const byP = [...aggregate({ start: P.start, end: P.end, gran: 'all', groupBy: 'product' }).groups.values()];
+    const have = new Set(byP.map(g => g.key));
+    const rows = productsSorted().map(p => ({ p, c: have.has(p.id) ? byP.find(g => g.key === p.id).s[0] : blankCell() }));
+    pTable = `<section class="card span12"><header><h3>各產品成效<small>點選列可只看該產品</small></h3></header><div class="tw"><table class="t">${thead('產品')}<tbody>${rows.map(r => `<tr class="click" data-act="pickproduct" data-id="${r.p.id}"><td><i class="dot" style="background:${SLOT(r.p.slot || 0)}"></i> ${esc(r.p.name)}${r.p.sample ? '<span class="sample-tag">範例</span>' : ''}</td>${rowCells(r.c)}</tr>`).join('')}</tbody></table></div></section>`;
+  }
+
+  // issue summary
+  const inScope = i => S.products.has(i.product) && (UI.product === 'all' || i.product === UI.product);
+  const bugs = [...S.issues.values()].filter(i => i.type === 'bug' && inScope(i));
+  const feats = [...S.issues.values()].filter(i => i.type === 'feature' && inScope(i));
+  const ob = bugs.filter(i => isOpen(i.status));
+  const priCount = PRIORITY.map(([k, l]) => `<span class="stat" data-act="gobugs" data-pri="${k}"><b>${ob.filter(i => i.priority === k).length}</b><span>${k} ${l}</span></span>`).join('');
+  const topBugs = ob.sort((a, b) => a.priority.localeCompare(b.priority) || (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 5);
+  const topFeat = feats.filter(i => isOpen(i.status)).sort((a, b) => (b.votes || 0) - (a.votes || 0)).slice(0, 5);
+
+  const metricChips = Object.entries(METRICS).filter(([k]) => k !== 'cpa').map(([k, M]) => `<button class="chip ${UI.metric === k ? 'on' : ''}" data-act="metric" data-id="${k}">${M.name}</button>`).join('');
+  const groupSeg = [['total', '合計'], ['product', '依產品'], ['market', '依市場']].map(([k, l]) => `<button type="button" data-act="group" data-id="${k}" class="${gb === k ? 'on' : ''}">${l}</button>`).join('');
+  const roas = cellVal(cur, 'roas');
+
+  el.innerHTML = `<div class="grid12">
+    <div class="kpis span12">${tiles}</div>
+    <section class="card span12"><header><h3>成長趨勢<small>${esc(METRICS[UI.metric].name)}・${P.gran === 'day' ? '每日' : '每月'}${evs.length ? '・◆ 為事件標記' : ''}</small></h3><div class="seg">${groupSeg}</div></header>
+      <div class="chips" style="margin-bottom:12px">${metricChips}</div>
+      ${legendHTML(series)}<div class="chart" id="c-trend"></div></section>
+    <section class="card span7"><header><h3>營收與廣告花費<small>ROAS ${fmtVal(roas, 'x')}</small></h3></header>${legendHTML(ra)}<div class="chart" id="c-ra"></div></section>
+    <section class="card span5"><header><h3>廣告通路花費<small>合計 ${fmtVal(chTotal, 'cur')}</small></h3></header>${chHTML}</section>
+    <section class="card span12"><header><h3>各市場成效<small>點選列可只看該市場</small></h3></header>${mTable}</section>
+    ${pTable}
+    <section class="card span6"><header><h3>待處理 Bug<small>${ob.length} 筆未結案</small></h3><button class="btn sm" data-act="go" data-id="bugs">全部 Bug</button></header>
+      <div class="stat-row" style="margin-bottom:12px">${priCount}</div>
+      <div class="mini">${topBugs.map(i => issueRow(i, true)).join('') || '<p class="hint">沒有未結案的 Bug。</p>'}</div></section>
+    <section class="card span6"><header><h3>熱門功能需求<small>依提出次數</small></h3><button class="btn sm" data-act="go" data-id="features">全部需求</button></header>
+      <div class="mini">${topFeat.map(i => issueRow(i, true)).join('') || '<p class="hint">還沒有功能需求。</p>'}</div></section>
+  </div>`;
+  const emptyText = `這段期間還沒有數據${canWrite && db ? '<br><button class="btn sm" style="margin-top:10px" data-act="go" data-id="data">前往數據輸入</button>' : ''}`;
+  drawLine($('#c-trend'), { labels: tr.B.map(b => b.label), full: tr.B.map(b => b.full), series, fmt: METRICS[UI.metric].fmt, events: evs, area: true, height: 260, aria: '成長趨勢圖', emptyText });
+  drawLine($('#c-ra'), { labels: daily.B.map(b => b.label), full: daily.B.map(b => b.full), series: ra, fmt: 'cur', height: 220, aria: '營收與廣告花費', emptyText: '這段期間還沒有數據' });
+}
+
+/* ================= view: issues ================= */
+function issueRow(i, mini) {
+  const st = stMeta(i.type, i.status), done = !isOpen(i.status);
+  const meta = [
+    `<span><i class="dot" style="background:${pColor(i.product)}"></i>${esc(pName(i.product))}</span>`,
+    i.platform ? `<span>${esc(i.platform)}</span>` : '',
+    i.version ? `<span class="mono">${esc(i.version)}</span>` : '',
+    i.owner ? `<span>負責：${esc(i.owner)}</span>` : '',
+    `<span>${ago(i.updatedAt || i.createdAt)}更新</span>`,
+    i.sample ? '<span class="sample-tag">範例</span>' : ''
+  ].join('');
+  const stOpts = (i.type === 'bug' ? BUG_STATUS : FEAT_STATUS).map(([k, l]) => `<option value="${k}" ${k === i.status ? 'selected' : ''}>${l}</option>`).join('');
+  const stCtl = canWrite && db && !mini ? `<select class="stsel" data-act="status" data-id="${i.id}" aria-label="狀態">${stOpts}</select>` : `<span class="pill ${st[2]}">${st[1]}</span>`;
+  const vote = i.type === 'feature' ? (canWrite && db && !mini ? `<button class="vote" data-act="vote" data-id="${i.id}" title="又有人提出這個需求">▲ ${i.votes || 0}</button>` : `<span class="mono hint">▲ ${i.votes || 0}</span>`) : (mini ? '' : '<span></span>');
+  return `<div class="irow ${done ? 'done' : ''}" data-act="openissue" data-id="${i.id}" tabindex="0"><span class="stripe ${esc(i.priority)}"></span><span class="pri ${esc(i.priority)}">${esc(i.priority)}</span><div style="min-width:0"><div class="ititle">${esc(i.title)}</div><div class="imeta">${meta}</div></div>${mini ? (i.type === 'feature' ? vote : stCtl) : vote + stCtl}</div>`;
+}
+function buildIssues(el, type) {
+  const f = UI.f[type];
+  const stList = type === 'bug' ? BUG_STATUS : FEAT_STATUS;
+  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:14px">
+    <div class="toolbar">
+      <div class="stat-row" id="is-stats"></div><span class="sp"></span>
+      <input class="inp" id="is-q" type="search" placeholder="搜尋標題、描述、負責人" value="${esc(f.q)}" aria-label="搜尋">
+      <label class="sel"><span>優先級</span><select id="is-pri"><option value="all">全部</option>${PRIORITY.map(([k, l]) => `<option value="${k}">${k} ${l}</option>`).join('')}</select></label>
+      ${canWrite && db ? `<button class="btn primary" data-act="newissue" data-id="${type}">＋ ${type === 'bug' ? '回報 Bug' : '新增需求'}</button>` : ''}
+    </div>
+    <div id="is-list"></div></div>`;
+  $('#is-pri').value = f.pri;
+  $('#is-q').addEventListener('input', e => { f.q = e.target.value; saveUI(); updateIssues(type); });
+  $('#is-pri').addEventListener('change', e => { f.pri = e.target.value; saveUI(); updateIssues(type); });
+  void stList;
+}
+function updateIssues(type) {
+  const list = $('#is-list'); if (!list) return;
+  if (!S.ready) { list.innerHTML = loadingHTML(); return; }
+  if (!S.products.size) { list.innerHTML = onboardingHTML(); return; }
+  const f = UI.f[type], stList = type === 'bug' ? BUG_STATUS : FEAT_STATUS;
+  const all = [...S.issues.values()].filter(i => i.type === type && S.products.has(i.product) && (UI.product === 'all' || i.product === UI.product));
+  const counts = { open: all.filter(i => isOpen(i.status)).length, all: all.length };
+  stList.forEach(([k]) => counts[k] = all.filter(i => i.status === k).length);
+  $('#is-stats').innerHTML = [['open', '未結案'], ...stList.map(s => [s[0], s[1]]), ['all', '全部']].map(([k, l]) => `<span class="stat ${f.st === k ? 'on' : ''}" data-act="ist" data-id="${k}" data-type="${type}" role="button" tabindex="0"><b>${counts[k]}</b><span>${l}</span></span>`).join('');
+  const q = f.q.trim().toLowerCase();
+  let rows = all.filter(i => (f.st === 'all' || (f.st === 'open' ? isOpen(i.status) : i.status === f.st)) && (f.pri === 'all' || i.priority === f.pri) &&
+    (!q || [i.title, i.desc, i.owner, i.version].some(s => String(s || '').toLowerCase().includes(q))));
+  rows.sort((a, b) => (isOpen(b.status) - isOpen(a.status)) || (type === 'feature' ? (b.votes || 0) - (a.votes || 0) : 0) || a.priority.localeCompare(b.priority) || (b.updatedAt || 0) - (a.updatedAt || 0));
+  list.innerHTML = rows.length ? `<div class="ilist">${rows.map(i => issueRow(i)).join('')}</div>` :
+    `<div class="card empty-state"><h2>${all.length ? '沒有符合條件的項目' : type === 'bug' ? '還沒有 Bug 紀錄' : '還沒有功能需求'}</h2><p>${all.length ? '調整上方的狀態或優先級篩選看看。' : type === 'bug' ? '測試、客服或商店評論發現的問題都可以記在這裡，標上優先級與負責人。' : '把使用者回饋、團隊點子記下來；同樣的需求再被提出時按 ▲ 累計次數。'}</p></div>`;
+}
+function issueModal(type, id) {
+  const it = id ? S.issues.get(id) : null;
+  const firstP = UI.product !== 'all' ? UI.product : productsSorted()[0]?.id;
+  const d = it || { type, title: '', product: firstP, priority: type === 'bug' ? 'P2' : 'P3', status: type === 'bug' ? 'new' : 'idea', platform: '', version: '', owner: '', desc: '', votes: 1 };
+  type = d.type;
+  const ro = !(canWrite && db);
+  const opt = (arr, v) => arr.map(([k, l]) => `<option value="${esc(k)}" ${k === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
+  openModal(`<form id="im">
+    <header><h2>${ro ? '' : id ? '編輯' : '新增'}${type === 'bug' ? ' Bug' : '功能需求'}</h2><button type="button" class="x" data-close aria-label="關閉">✕</button></header>
+    <label class="fld"><span>標題</span><input id="im-title" required maxlength="160" value="${esc(d.title)}" placeholder="${type === 'bug' ? '例：iOS 17 開啟訂閱頁會閃退' : '例：支援 Apple Watch 快速記帳'}"></label>
+    <div class="g2">
+      <label class="fld"><span>產品</span><select id="im-p">${opt(productsSorted().map(p => [p.id, p.name]), d.product)}</select></label>
+      <label class="fld"><span>優先級</span><select id="im-pri">${opt(PRIORITY.map(([k, l]) => [k, `${k} ${l}`]), d.priority)}</select></label>
+      <label class="fld"><span>狀態</span><select id="im-st">${opt(type === 'bug' ? BUG_STATUS : FEAT_STATUS, d.status)}</select></label>
+      <label class="fld"><span>平台</span><select id="im-pl"><option value="">不指定</option>${opt(PLATFORMS.map(p => [p, p]), d.platform)}</select></label>
+      <label class="fld"><span>${type === 'bug' ? '發生版本' : '目標版本'}</span><input id="im-ver" value="${esc(d.version)}" placeholder="例：2.3.1"></label>
+      <label class="fld"><span>負責人</span><input id="im-owner" value="${esc(d.owner)}" placeholder="名字"></label>
+      ${type === 'feature' ? `<label class="fld"><span>被提出次數</span><input id="im-votes" type="number" min="0" step="1" value="${+d.votes || 0}"></label>
+      <label class="fld"><span>需求來源</span><input id="im-src" value="${esc(d.source || '')}" placeholder="例：App Store 評論、客服、內部"></label>` : ''}
+    </div>
+    <label class="fld"><span>${type === 'bug' ? '描述（重現步驟、預期與實際結果）' : '描述（使用情境、為什麼需要）'}</span><textarea id="im-desc" rows="5">${esc(d.desc)}</textarea></label>
+    ${it ? `<p class="hint">建立於 ${new Date(it.createdAt || Date.now()).toLocaleDateString('zh-TW')}・最後更新 ${ago(it.updatedAt)}</p>` : ''}
+    <footer>${id && !ro ? '<button type="button" class="btn danger ghost" id="im-del">刪除</button>' : ''}<span class="sp"></span><button type="button" class="btn ghost" data-close>${ro ? '關閉' : '取消'}</button>${ro ? '' : '<button class="btn primary" type="submit">儲存</button>'}</footer>
+  </form>`, sheet => {
+    if (ro) $$('input,select,textarea', sheet).forEach(e => e.disabled = true);
+    $('#im', sheet).addEventListener('submit', async e => {
+      e.preventDefault();
+      const title = $('#im-title').value.trim(); if (!title) return;
+      const body = {
+        type, title, product: $('#im-p').value, priority: $('#im-pri').value, status: $('#im-st').value, platform: $('#im-pl').value,
+        version: $('#im-ver').value.trim(), owner: $('#im-owner').value.trim(), desc: $('#im-desc').value,
+        createdAt: it?.createdAt || Date.now(), updatedAt: Date.now()
+      };
+      if (type === 'feature') { body.votes = Math.max(0, parseInt($('#im-votes').value, 10) || 0); body.source = $('#im-src').value.trim(); }
+      if (it?.sample) body.sample = true;
+      const ok = await W(() => id ? serial('issues/' + id, () => db.doc('issues/' + id).set(body)) : db.collection('issues').add(body), '已儲存');
+      if (ok) closeModal();
+    });
+    armDelete($('#im-del', sheet), async () => { if (await W(() => db.doc('issues/' + id).delete(), '已刪除')) closeModal(); });
+  });
+}
+
+/* ================= view: products ================= */
+function renderProducts(el) {
+  if (!S.ready) { el.innerHTML = loadingHTML(); return; }
+  if (!S.products.size) { el.innerHTML = onboardingHTML(); return; }
+  const start = addDays(TODAY, -29);
+  const agg = aggregate({ start, end: TODAY, gran: 'all', groupBy: 'product', p: 'all', m: 'all' }).groups;
+  el.innerHTML = `<div class="pgrid">${productsSorted().map(p => {
+    const c = agg.get(p.id)?.s[0] || blankCell();
+    const st = PSTATUS.find(s => s[0] === p.status) || PSTATUS[0];
+    const ob = [...S.issues.values()].filter(i => i.product === p.id && i.type === 'bug' && isOpen(i.status)).length;
+    const dl = [
+      p.platforms?.length ? `<dt>平台</dt><dd>${esc(p.platforms.join('、'))}</dd>` : '',
+      p.launch ? `<dt>上線日</dt><dd>${esc(p.launch)}</dd>` : '',
+      p.ios ? `<dt>App Store</dt><dd class="mono">${esc(p.ios)}</dd>` : '',
+      p.android ? `<dt>Google Play</dt><dd class="mono">${esc(p.android)}</dd>` : '',
+      p.note ? `<dt>備註</dt><dd>${esc(p.note)}</dd>` : ''
+    ].join('');
+    return `<article class="card pcard">
+      <div class="ph"><span class="pdot" style="background:${SLOT(p.slot || 0)}"></span><h3>${esc(p.name)}</h3>${p.sample ? '<span class="sample-tag">範例</span>' : ''}<span class="pill ${st[2]}">${st[1]}</span></div>
+      ${dl ? `<dl>${dl}</dl>` : ''}
+      <div class="pstats"><div><small>近 30 天下載</small><b>${fmtVal(c.has ? c.dl : null, 'int')}</b></div><div><small>近 30 天營收</small><b>${fmtVal(c.has ? c.rev : null, 'cur')}</b></div><div><small>未結案 Bug</small><b>${ob}</b></div></div>
+      <div class="acts"><button class="btn sm" data-act="viewproduct" data-id="${p.id}">查看成效</button>${canWrite && db ? `<button class="btn sm ghost" data-act="editproduct" data-id="${p.id}">編輯</button>` : ''}</div>
+    </article>`;
+  }).join('')}${canWrite && db ? '<button class="addcard" data-act="newproduct">＋ 新增產品</button>' : ''}</div>`;
+}
+function productModal(id) {
+  const p = id ? S.products.get(id) : null;
+  const d = p || { name: '', status: 'live', platforms: ['iOS', 'Android'], launch: '', ios: '', android: '', note: '' };
+  openModal(`<form id="pm">
+    <header><h2>${id ? '編輯產品' : '新增產品'}</h2><button type="button" class="x" data-close aria-label="關閉">✕</button></header>
+    <div class="g2">
+      <label class="fld"><span>產品名稱</span><input id="pm-name" required maxlength="60" value="${esc(d.name)}" placeholder="例：喵記帳"></label>
+      <label class="fld"><span>狀態</span><select id="pm-st">${PSTATUS.map(([k, l]) => `<option value="${k}" ${k === d.status ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    </div>
+    <div class="fld"><span>平台</span><div class="checks">${['iOS', 'Android', 'Web', 'macOS', 'Windows'].map(pl => `<label><input type="checkbox" name="pl" value="${pl}" ${d.platforms?.includes(pl) ? 'checked' : ''}> ${pl}</label>`).join('')}</div></div>
+    <div class="g2">
+      <label class="fld"><span>上線日期</span><input id="pm-launch" type="date" value="${esc(d.launch)}"></label>
+      <label class="fld"><span>App Store ID</span><input id="pm-ios" value="${esc(d.ios)}" placeholder="例：id1234567890"></label>
+      <label class="fld"><span>Google Play 套件名稱</span><input id="pm-and" value="${esc(d.android)}" placeholder="例：com.example.app"></label>
+    </div>
+    <label class="fld"><span>備註</span><textarea id="pm-note" rows="3" placeholder="定位、目標客群、訂閱方案…">${esc(d.note)}</textarea></label>
+    ${id ? '<p class="hint">刪除產品會一併刪除它的所有數據、Bug、需求與事件標記，無法復原。</p>' : ''}
+    <footer>${id ? '<button type="button" class="btn danger ghost" id="pm-del">刪除產品</button>' : ''}<span class="sp"></span><button type="button" class="btn ghost" data-close>取消</button><button class="btn primary" type="submit">儲存</button></footer>
+  </form>`, sheet => {
+    $('#pm', sheet).addEventListener('submit', async e => {
+      e.preventDefault();
+      const name = $('#pm-name').value.trim(); if (!name) return;
+      const used = new Set(productsSorted().filter(x => x.id !== id).map(x => x.slot));
+      let slot = p ? p.slot : [0, 1, 2, 3, 4, 5, 6, 7].find(i => !used.has(i)); if (slot == null) slot = S.products.size % 8;
+      const body = { name, status: $('#pm-st').value, platforms: $$('input[name=pl]:checked', sheet).map(x => x.value), launch: $('#pm-launch').value, ios: $('#pm-ios').value.trim(), android: $('#pm-and').value.trim(), note: $('#pm-note').value, slot, createdAt: p?.createdAt || Date.now(), updatedAt: Date.now() };
+      if (p?.sample) body.sample = true;
+      let newId = id;
+      const ok = await W(async () => { if (id) await db.doc('products/' + id).set(body); else { const ref = db.collection('products').doc(); newId = ref.id; await ref.set(body); } }, id ? '已更新產品' : '已新增產品');
+      if (ok) { closeModal(); if (!id) { UI.product = newId; saveUI(); } schedule(); }
+    });
+    armDelete($('#pm-del', sheet), async () => { const ok = await W(() => deleteProduct(id), '已刪除產品'); if (ok) { closeModal(); UI.product = 'all'; saveUI(); schedule(); } }, '再按一次：永久刪除');
+  });
+}
+async function deleteProduct(id) {
+  for (const [k, d] of [...S.metrics]) if (d?.p === id) await db.doc('metrics/' + k).delete();
+  for (const i of [...S.issues.values()]) if (i.product === id) await db.doc('issues/' + i.id).delete();
+  for (const e of [...S.events.values()]) if (e.product === id) await db.doc('events/' + e.id).delete();
+  await db.doc('products/' + id).delete();
+}
+
+/* ================= view: data ================= */
+function buildData(el) {
+  if (!S.ready) { el.innerHTML = loadingHTML(); built.view = null; return; }
+  if (!S.products.size) { el.innerHTML = onboardingHTML(); built.view = null; return; }
+  const ro = !(canWrite && db);
+  const ps = productsSorted();
+  const defP = UI.product !== 'all' ? UI.product : ps[0].id;
+  const defM = UI.market !== 'all' ? UI.market : S.cfg.markets[0]?.code || 'TW';
+  const mOpts = S.cfg.markets.map(m => `<option value="${esc(m.code)}">${esc(m.name)}（${esc(m.code)}）</option>`).join('');
+  const pOpts = ps.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  el.innerHTML = `<div class="grid12">
+    <section class="card span7"><header><h3>記錄每日數據</h3></header>
+      <form id="df">
+        <div class="g3">
+          <label class="fld"><span>產品</span><select id="df-p">${pOpts}</select></label>
+          <label class="fld"><span>市場</span><select id="df-m">${mOpts}</select></label>
+          <label class="fld"><span>日期</span><input id="df-date" type="date" max="${TODAY}" value="${addDays(TODAY, -1)}"></label>
+        </div>
+        <h4>成效</h4>
+        <div class="g4">
+          <label class="fld"><span>下載</span><input id="df-dl" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label class="fld"><span>新訂閱</span><input id="df-sub" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label class="fld"><span>有效訂閱（當日）</span><input id="df-act" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label class="fld"><span>營收（${esc(S.cfg.currency)}）</span><input id="df-rev" type="number" min="0" step="0.01" inputmode="decimal"></label>
+        </div>
+        <h4>廣告花費（${esc(S.cfg.currency)}）</h4>
+        <div class="g4">${S.cfg.channels.map((c, i) => `<label class="fld"><span>${esc(c)}</span><input id="df-ad-${i}" data-ch="${esc(c)}" type="number" min="0" step="0.01" inputmode="decimal"></label>`).join('')}</div>
+        <div class="frow"><span class="hint" id="df-state"></span><span class="sp"></span>${ro ? '' : '<button class="btn primary" type="submit">儲存這一天</button>'}</div>
+      </form>
+    </section>
+    <section class="card span5"><header><h3>最近紀錄<small id="rc-sub"></small></h3></header><div id="rc"></div></section>
+    <section class="card span12"><header><h3>CSV 批次匯入</h3></header>
+      <p class="hint">從 App Store Connect、Google Play Console、RevenueCat 或廣告後台匯出後，整理成以下欄位貼上（逗號或 Tab 分隔都可以）。沒有「產品」「市場」欄時，會使用上方表單選擇的產品與市場。同一天已存在的數字會被更新，沒提供的欄位保留原值。</p>
+      <pre class="code">date,market,downloads,new_subs,active_subs,revenue,${S.cfg.channels.map(c => c.replace(/,/g, ' ')).join(',')}
+${addDays(TODAY, -2)},TW,320,18,1450,412.5,${S.cfg.channels.map((_, i) => [120, 40, 25, 30][i] ?? 0).join(',')}</pre>
+      <p class="hint">也可以用 <span class="mono">product</span>（產品名稱）、<span class="mono">ad_spend</span> + <span class="mono">channel</span> 欄位；中文欄名「日期、市場、下載、新訂閱、有效訂閱、營收、廣告花費、通路」同樣可辨識。</p>
+      <label class="fld" style="margin-top:10px"><span>貼上資料</span><textarea id="csv" rows="6" class="mono" placeholder="把 CSV 內容貼在這裡" ${ro ? 'disabled' : ''}></textarea></label>
+      <div class="frow"><span class="hint" id="csv-out"></span><span class="sp"></span>${ro ? '' : '<button class="btn" data-act="csvcheck" type="button">檢查</button><button class="btn primary" data-act="csvimport" type="button" disabled id="csv-go">匯入</button>'}</div>
+    </section>
+    <section class="card span7"><header><h3>事件標記<small>版本更新、行銷活動會標在趨勢圖上</small></h3></header>
+      ${ro ? '' : `<form id="ef" class="g4" style="align-items:end">
+        <label class="fld"><span>日期</span><input id="ef-date" type="date" value="${TODAY}" required></label>
+        <label class="fld"><span>類型</span><select id="ef-kind">${EVKINDS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+        <label class="fld"><span>產品</span><select id="ef-p"><option value="all">全部產品</option>${pOpts}</select></label>
+        <label class="fld"><span>說明</span><input id="ef-title" required maxlength="80" placeholder="例：v2.4 上線"></label>
+        <div class="frow" style="grid-column:1/-1;margin-top:0"><span class="sp"></span><button class="btn" type="submit">加入事件</button></div>
+      </form>`}
+      <div id="ev-list"></div>
+    </section>
+    <section class="card span5"><header><h3>匯出</h3></header>
+      <p class="hint">把目前篩選（產品、市場）在所選期間內的每日數據匯出成 CSV，可以拿去做簡報或給財務對帳。</p>
+      <div class="frow"><label class="sel"><span>期間</span><select id="ex-r"><option value="30">近 30 天</option><option value="90">近 90 天</option><option value="365">近 365 天</option><option value="all">全部</option></select></label><button class="btn" data-act="export" type="button">匯出 CSV</button></div>
+      <textarea id="ex-out" class="inp mono" rows="6" hidden readonly style="margin-top:12px"></textarea>
+    </section>
+  </div>`;
+  $('#df-p').value = defP; $('#df-m').value = defM; if ($('#df-m').value !== defM) $('#df-m').selectedIndex = 0;
+  if (ro) $$('#df input, #df select').forEach(e => { if (!['df-p', 'df-m', 'df-date'].includes(e.id)) e.disabled = true; });
+  ['df-p', 'df-m', 'df-date'].forEach(i => $('#' + i).addEventListener('change', () => { fillForm(); updateData(); }));
+  $('#df').addEventListener('submit', saveDayForm);
+  $('#ef')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const body = { date: $('#ef-date').value, kind: $('#ef-kind').value, product: $('#ef-p').value, title: $('#ef-title').value.trim(), createdAt: Date.now() };
+    if (!body.date || !body.title) return;
+    if (await W(() => db.collection('events').add(body), '已加入事件')) $('#ef-title').value = '';
+  });
+  $('#csv')?.addEventListener('input', () => { $('#csv-go').disabled = true; csvState = null; $('#csv-out').textContent = ''; });
+  fillForm();
+}
+function fillForm() {
+  const p = $('#df-p').value, m = $('#df-m').value, date = $('#df-date').value;
+  if (!date) return;
+  const r = getDay(p, m, date) || {};
+  ['dl', 'sub', 'act', 'rev'].forEach(k => { $('#df-' + k).value = r[k] ?? ''; });
+  const ad = typeof r.ad === 'number' ? { '未分類': r.ad } : (r.ad || {});
+  $$('#df [data-ch]').forEach(inp => { inp.value = ad[inp.dataset.ch] ?? ''; });
+  const extra = Object.keys(ad).filter(k => !S.cfg.channels.includes(k));
+  $('#df-state').textContent = getDay(p, m, date) ? `${dayFull(date)} 已有紀錄，儲存會覆蓋${extra.length ? `（另含 ${extra.join('、')} 的花費會保留）` : ''}` : `${dayFull(date)} 還沒有紀錄`;
+}
+async function saveDayForm(e) {
+  e.preventDefault();
+  const p = $('#df-p').value, m = $('#df-m').value, date = $('#df-date').value;
+  if (!date) { toast('請選擇日期', 'err'); return; }
+  const rec = {};
+  ['dl', 'sub', 'act', 'rev'].forEach(k => { const v = num($('#df-' + k).value); if (v != null) rec[k] = v; });
+  const old = getDay(p, m, date) || {};
+  const ad = typeof old.ad === 'object' && old.ad ? Object.fromEntries(Object.entries(old.ad).filter(([k]) => !S.cfg.channels.includes(k))) : {};
+  $$('#df [data-ch]').forEach(inp => { const v = num(inp.value); if (v != null) ad[inp.dataset.ch] = v; });
+  if (Object.keys(ad).length) rec.ad = ad;
+  if (!Object.keys(rec).length) { toast('至少填一個數字再儲存', 'err'); return; }
+  const ok = await W(() => writeDays(p, m, date.slice(0, 7), d => { d[date.slice(8)] = rec; }), `已儲存 ${pName(p)}・${mName(m)}・${dayLabel(date)}`);
+  if (ok) { fillForm(); updateData(); }
+}
+function updateData() {
+  const rc = $('#rc'); if (!rc) return;
+  const p = $('#df-p').value, m = $('#df-m').value, sel = $('#df-date').value;
+  $('#rc-sub').textContent = `${pName(p)}・${mName(m)}`;
+  const rows = [];
+  for (let i = 0; i < 21; i++) { const d = addDays(TODAY, -i); const r = getDay(p, m, d); if (r) rows.push([d, r]); }
+  rc.innerHTML = rows.length ? `<div class="tw"><table class="t"><thead><tr><th>日期</th><th class="n">下載</th><th class="n">新訂閱</th><th class="n">營收</th><th class="n">廣告</th></tr></thead><tbody>${rows.map(([d, r]) => `<tr class="click" data-act="loadday" data-id="${d}" ${d === sel ? 'style="font-weight:500"' : ''}><td>${dayLabel(d)} <span class="hint">週${WEEK[new Date(d.replace(/-/g, '/')).getDay()]}</span></td><td class="n">${fmtVal(r.dl, 'int')}</td><td class="n">${fmtVal(r.sub, 'int')}</td><td class="n">${fmtVal(r.rev, 'cur')}</td><td class="n">${fmtVal(r.ad != null ? adSum(r.ad) : null, 'cur')}</td></tr>`).join('')}</tbody></table></div><p class="hint" style="margin-top:8px">點選一列可載入修改。</p>` : '<p class="hint">近 21 天沒有這個產品在這個市場的紀錄。</p>';
+  const ev = $('#ev-list');
+  const evs = [...S.events.values()].filter(e => !e.product || e.product === 'all' || S.products.has(e.product)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
+  ev.innerHTML = evs.length ? evs.map(e => `<div class="evrow"><span class="mono">${esc(e.date)}</span><span class="pill">${esc((EVKINDS.find(k => k[0] === e.kind) || EVKINDS[3])[1])}</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.title)} <span class="hint">・${e.product && e.product !== 'all' ? esc(pName(e.product)) : '全部產品'}</span>${e.sample ? '<span class="sample-tag">範例</span>' : ''}</span>${canWrite && db ? `<button class="btn sm ghost" data-act="delevent" data-id="${e.id}" aria-label="刪除事件">刪除</button>` : '<span></span>'}</div>`).join('') : '<p class="hint" style="margin-top:12px">還沒有事件。</p>';
+  if (!$('#df').contains(document.activeElement)) fillForm();
+}
+
+/* ----- CSV ----- */
+const HMAP = { date: 'date', '日期': 'date', day: 'date', product: 'p', '產品': 'p', app: 'p', market: 'm', '市場': 'm', country: 'm', '國家': 'm', downloads: 'dl', '下載': 'dl', dl: 'dl', installs: 'dl', units: 'dl', new_subs: 'sub', subs: 'sub', sub: 'sub', '新訂閱': 'sub', subscriptions: 'sub', new_subscriptions: 'sub', active_subs: 'act', act: 'act', '有效訂閱': 'act', active_subscriptions: 'act', revenue: 'rev', rev: 'rev', '營收': 'rev', '收入': 'rev', proceeds: 'rev', ad_spend: 'ad', ad: 'ad', spend: 'ad', cost: 'ad', '廣告花費': 'ad', channel: 'ch', '通路': 'ch', source: 'ch' };
+let csvState = null;
+function splitLine(line, sep) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) { const ch = line[i]; if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (ch === sep && !q) { out.push(cur); cur = ''; } else cur += ch; }
+  out.push(cur); return out.map(s => s.trim());
+}
+function normDate(s) { const m = String(s).trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/); return m ? `${m[1]}-${pad(m[2])}-${pad(m[3])}` : null; }
+function parseCSV(text, defP, defM) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return { rows: [], errors: ['至少需要一行標題和一行資料'] };
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  const head = splitLine(lines[0], sep);
+  const cols = head.map(hd => {
+    const k = hd.toLowerCase().replace(/\s+/g, '_');
+    if (HMAP[k] || HMAP[hd]) return { t: HMAP[k] || HMAP[hd] };
+    const ch = S.cfg.channels.find(c => { const ck = c.toLowerCase().replace(/\s+/g, '_'); return ck === k || 'ad_' + ck === k; });
+    if (ch) return { t: 'adch', ch };
+    return { t: null, hd };
+  });
+  if (!cols.some(c => c.t === 'date')) return { rows: [], errors: ['找不到日期欄（date 或 日期）'] };
+  const byName = new Map(productsSorted().flatMap(p => [[p.name.toLowerCase(), p.id], [p.id.toLowerCase(), p.id]]));
+  const rows = [], errors = [], ignored = cols.filter(c => !c.t).map(c => c.hd);
+  for (let li = 1; li < lines.length; li++) {
+    const cells = splitLine(lines[li], sep), r = { ad: {} };
+    let adTotal, ch, pRaw, bad = null;
+    cols.forEach((c, i) => {
+      const v = cells[i] ?? '';
+      switch (c.t) {
+        case 'date': r.date = normDate(v); if (!r.date) bad = `日期「${v}」看不懂`; break;
+        case 'p': pRaw = v; break;
+        case 'm': if (v) r.m = v.toUpperCase(); break;
+        case 'dl': case 'sub': case 'act': case 'rev': { const n = num(v); if (n != null) r[c.t] = n; break; }
+        case 'ad': adTotal = num(v); break;
+        case 'ch': ch = v; break;
+        case 'adch': { const n = num(v); if (n != null) r.ad[c.ch] = n; break; }
+      }
+    });
+    if (adTotal != null) { const key = (ch && (S.cfg.channels.find(x => x.toLowerCase() === ch.toLowerCase()) || ch)) || '未分類'; r.ad[key] = (r.ad[key] || 0) + adTotal; }
+    r.p = pRaw ? byName.get(pRaw.toLowerCase()) : defP;
+    if (pRaw && !r.p) bad = `找不到產品「${pRaw}」`;
+    r.m = r.m || defM;
+    if (r.date && r.date > TODAY) bad = '日期在未來';
+    if (bad) { errors.push(`第 ${li + 1} 行：${bad}`); continue; }
+    rows.push(r);
+  }
+  return { rows, errors, ignored };
+}
+function csvCheck() {
+  const res = parseCSV($('#csv').value, $('#df-p').value, $('#df-m').value);
+  csvState = res;
+  const out = $('#csv-out');
+  if (!res.rows.length) { out.textContent = res.errors.slice(0, 3).join('；') || '沒有可匯入的資料'; $('#csv-go').disabled = true; return; }
+  const dates = res.rows.map(r => r.date).sort();
+  const combos = new Set(res.rows.map(r => r.p + r.m));
+  const newM = [...new Set(res.rows.map(r => r.m))].filter(c => !S.cfg.markets.some(m => m.code === c));
+  out.textContent = `可匯入 ${res.rows.length} 筆・${combos.size} 組產品×市場・${dates[0]} ~ ${dates[dates.length - 1]}` +
+    (res.errors.length ? `；略過 ${res.errors.length} 行（${res.errors.slice(0, 2).join('；')}）` : '') +
+    (res.ignored?.length ? `；忽略欄位：${res.ignored.join('、')}` : '') +
+    (newM.length ? `；新市場代碼 ${newM.join('、')}（可到設定補上名稱）` : '');
+  $('#csv-go').disabled = false;
+}
+async function csvImport() {
+  if (!csvState?.rows.length) return;
+  const groups = new Map();
+  for (const r of csvState.rows) { const k = `${r.p}__${r.m}__${r.date.slice(0, 7)}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  const btn = $('#csv-go'); btn.disabled = true;
+  let n = 0;
+  const ok = await W(async () => {
+    for (const [, rows] of groups) {
+      const { p, m, date } = rows[0];
+      await writeDays(p, m, date.slice(0, 7), d => {
+        for (const r of rows) {
+          const dd = r.date.slice(8), old = d[dd] || {}, merged = Object.assign({}, old);
+          ['dl', 'sub', 'act', 'rev'].forEach(k => { if (r[k] != null) merged[k] = r[k]; });
+          if (Object.keys(r.ad).length) merged.ad = Object.assign({}, typeof old.ad === 'object' && old.ad ? old.ad : (typeof old.ad === 'number' ? { '未分類': old.ad } : {}), r.ad);
+          d[dd] = merged;
+        }
+      });
+      n += rows.length; $('#csv-out').textContent = `匯入中… ${n} / ${csvState.rows.length}`;
+    }
+  }, `已匯入 ${csvState.rows.length} 筆`);
+  if (ok) { $('#csv').value = ''; $('#csv-out').textContent = `完成，匯入 ${n} 筆。`; csvState = null; }
+  else btn.disabled = false;
+}
+async function exportCSV() {
+  const r = $('#ex-r').value;
+  const start = r === 'all' ? '0000-01-01' : addDays(TODAY, -(+r - 1));
+  const chs = new Set(), rows = [];
+  for (const doc of S.metrics.values()) {
+    if (!doc || !S.products.has(doc.p)) continue;
+    if (UI.product !== 'all' && doc.p !== UI.product) continue;
+    if (UI.market !== 'all' && doc.m !== UI.market) continue;
+    for (const [dd, rec] of Object.entries(doc.d || {})) {
+      const date = doc.mo + '-' + dd; if (date < start || date > TODAY) continue;
+      const ad = typeof rec.ad === 'number' ? { '未分類': rec.ad } : (rec.ad || {});
+      Object.keys(ad).forEach(k => chs.add(k));
+      rows.push({ date, p: pName(doc.p), m: doc.m, rec, ad });
+    }
+  }
+  if (!rows.length) { toast('這個範圍沒有數據可匯出', 'err'); return; }
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.p.localeCompare(b.p) || a.m.localeCompare(b.m));
+  const cl = [...chs], q = v => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v;
+  const csv = ['date,product,market,downloads,new_subs,active_subs,revenue,ad_spend_total,' + cl.map(q).join(',')]
+    .concat(rows.map(x => [x.date, q(x.p), x.m, x.rec.dl ?? '', x.rec.sub ?? '', x.rec.act ?? '', x.rec.rev ?? '', adSum(x.rec.ad) || '', ...cl.map(c => x.ad[c] ?? '')].join(','))).join('\n');
+  const name = `product-data-${TODAY}.csv`;
+  try {
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+    toast('已匯出 ' + name);
+  } catch (e) {
+    const out = $('#ex-out'); out.hidden = false; out.value = csv; out.select();
+    toast('無法直接下載，已把 CSV 放在下方文字框，可全選複製');
+  }
+}
+
+/* ================= view: settings ================= */
+function buildSettings(el) {
+  const ro = !(canWrite && db);
+  const c = S.cfg;
+  el.innerHTML = `<div class="grid12">
+    <section class="card span6"><header><h3>幣別與市場</h3></header>
+      <form id="sf">
+        <label class="fld" style="max-width:220px"><span>營收與廣告的記帳幣別</span><select id="sf-cur">${CURRENCIES.map(x => `<option ${x === c.currency ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+        <h4>市場<small class="hint">　代碼建議用 ISO 國碼，例如 TW、US、JP、KR</small></h4>
+        <div id="sf-m">${c.markets.map(m => mRow(m.code, m.name)).join('')}</div>
+        <button type="button" class="btn sm ghost" data-act="addmrow" style="margin-top:8px">＋ 加入市場</button>
+        <h4>廣告通路</h4>
+        <div id="sf-c">${c.channels.map(x => cRow(x)).join('')}</div>
+        <button type="button" class="btn sm ghost" data-act="addcrow" style="margin-top:8px">＋ 加入通路</button>
+        <div class="frow"><span class="hint">修改通路名稱不會改動已記錄的花費，舊名稱的花費仍會出現在通路分析中。</span><span class="sp"></span>${ro ? '' : '<button class="btn primary" type="submit">儲存設定</button>'}</div>
+      </form>
+    </section>
+    <section class="card span6"><header><h3>讓數據自動進來</h3></header>
+      <p class="hint" style="font-size:13.5px;line-height:1.7">目前可以手動輸入或貼 CSV。想要更省力，有三種做法，由簡到繁：</p>
+      <ol class="steps" style="font-size:13.5px;line-height:1.7">
+        <li><b>每週匯出一次 CSV</b>：App Store Connect（銷售與趨勢）、Google Play Console（統計資料）、RevenueCat（Charts）和各廣告後台都能匯出，整理成上方格式貼入即可。</li>
+        <li><b>交給 Claude 整理</b>：把匯出的報表丟給 Claude，它可以透過 Supabase 直接寫進這個工作站的資料庫，連欄位整理都省了。</li>
+        <li><b>串接 API 自動同步</b>：用 RevenueCat、App Store Connect API、Google Play Developer API 與 Meta / Google Ads API，搭配排程每天寫入。需要一個小型後端（例如 Supabase Edge Function）。</li>
+      </ol>
+    </section>
+    <section class="card span6"><header><h3>團隊成員<small>只有名單裡的 Email 能登入看到資料</small></h3></header>
+      <div id="mem-list"></div>
+      ${isOwner ? `<form id="mf" class="frow" style="margin-top:12px">
+        <input class="inp" id="mf-email" type="email" placeholder="成員的 Email" style="flex:1;min-width:180px" aria-label="成員 Email">
+        <select class="inp" id="mf-role" style="width:auto" aria-label="權限">${ROLES.map(([k, l]) => `<option value="${k}" ${k === 'editor' ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <button class="btn primary" type="submit">加入</button>
+      </form>
+      <p class="hint" style="margin-top:10px">加入後請對方打開這個網站，按「註冊新帳號」用同一個 Email 註冊、完成信箱驗證就能登入。<br>擁有者：管理成員與所有資料・編輯者：新增修改資料・檢視者：只能看。</p>` : '<p class="hint" style="margin-top:10px">只有擁有者可以新增或移除成員。</p>'}
+    </section>
+    <section class="card span6"><header><h3>我的帳號</h3></header>
+      <p style="margin:0">目前登入：<b>${esc(me)}</b>（${esc((ROLES.find(r => r[0] === (members.find(x => x.email === me) || {}).role) || ['', '—'])[1])}）</p>
+      <div class="frow"><button class="btn" type="button" data-auth="signout">登出</button></div>
+    </section>
+    <section class="card span6" id="sample-card" hidden><header><h3>範例資料</h3></header>
+      <p class="hint">工作站附了兩個標示「範例」的產品和一些假數據，讓你先看看畫面。開始放入真實資料後，可以一鍵清除。</p>
+      <div class="frow">${ro ? '' : '<button class="btn danger" id="clear-sample" type="button">清除所有範例資料</button>'}</div>
+    </section>
+  </div>`;
+  if (ro) $$('#sf input, #sf select').forEach(e => e.disabled = true);
+  $('#mf')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const email = $('#mf-email').value.trim().toLowerCase(), role = $('#mf-role').value;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('請輸入正確的 Email', 'err'); return; }
+    if (members.some(x => x.email === email)) { toast('這個 Email 已經在名單裡了', 'err'); return; }
+    const ok = await W(() => q(sb.from('members').insert({ email, role })), `已加入 ${email}`);
+    if (ok) { $('#mf-email').value = ''; await loadMembers(); updateSettings(); }
+  });
+  $('#sf').addEventListener('submit', async e => {
+    e.preventDefault();
+    const markets = $$('#sf-m .listrow').map(r => ({ code: $('.m-code', r).value.trim().toUpperCase(), name: $('.m-name', r).value.trim() })).filter(m => m.code);
+    const seen = new Set(); const dup = markets.find(m => seen.has(m.code) || !seen.add(m.code));
+    if (dup) { toast(`市場代碼 ${dup.code} 重複了`, 'err'); return; }
+    if (markets.some(m => !/^[A-Z0-9-]{1,12}$/.test(m.code))) { toast('市場代碼只能用英文字母、數字（最多 12 字）', 'err'); return; }
+    markets.forEach(m => { if (!m.name) m.name = m.code; });
+    const channels = [...new Set($$('#sf-c .c-name').map(i => i.value.trim()).filter(Boolean))];
+    if (!markets.length) { toast('至少要有一個市場', 'err'); return; }
+    await W(() => db.doc('cfg/main').set({ currency: $('#sf-cur').value, markets, channels, updatedAt: Date.now() }), '設定已儲存');
+  });
+  armDelete($('#clear-sample'), async () => {
+    const ok = await W(async () => {
+      for (const p of [...S.products.values()].filter(p => p.sample)) await deleteProduct(p.id);
+      for (const i of [...S.issues.values()].filter(i => i.sample)) await db.doc('issues/' + i.id).delete();
+      for (const e of [...S.events.values()].filter(e => e.sample)) await db.doc('events/' + e.id).delete();
+    }, '範例資料已清除');
+    if (ok) { UI.product = 'all'; saveUI(); }
+  }, '再按一次：確定清除');
+}
+function updateSettings() {
+  const has = [...S.products.values()].some(p => p.sample) || [...S.issues.values()].some(i => i.sample);
+  const card = $('#sample-card'); if (card) card.hidden = !has;
+  const ml = $('#mem-list'); if (!ml) return;
+  ml.innerHTML = members.map(x => {
+    const self = x.email === me;
+    const role = ROLES.find(r => r[0] === x.role) || ['', x.role];
+    const ctl = isOwner && !self
+      ? `<select class="stsel" data-act="mrole" data-id="${esc(x.email)}" aria-label="權限">${ROLES.map(([k, l]) => `<option value="${k}" ${k === x.role ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn sm ghost danger" type="button" data-act="delmember" data-id="${esc(x.email)}">移除</button>`
+      : `<span class="pill">${esc(role[1])}</span><span class="hint">${self ? '你' : ''}</span>`;
+    return `<div class="memrow"><span>${esc(x.email)}</span>${ctl}</div>`;
+  }).join('') || '<p class="hint">名單是空的。</p>';
+}
+const mRow = (code = '', name = '') => `<div class="listrow"><input class="inp m-code mono" value="${esc(code)}" placeholder="代碼" maxlength="12" aria-label="市場代碼"><input class="inp m-name" value="${esc(name)}" placeholder="名稱，例如：台灣" aria-label="市場名稱"><button type="button" class="btn sm ghost" data-act="delrow" aria-label="移除">移除</button></div>`;
+const cRow = (name = '') => `<div class="listrow" style="grid-template-columns:minmax(0,1fr) auto"><input class="inp c-name" value="${esc(name)}" placeholder="例如：Meta" aria-label="通路名稱"><button type="button" class="btn sm ghost" data-act="delrow" aria-label="移除">移除</button></div>`;
+
+/* ================= modal / confirm ================= */
+function openModal(html, mount) {
+  const ov = $('#modal'); ov.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`; ov.hidden = false;
+  mount && mount(ov.firstElementChild);
+  setTimeout(() => { const f = ov.querySelector('input:not([disabled]),select:not([disabled]),textarea:not([disabled])'); f && f.focus(); }, 30);
+}
+function closeModal() { const ov = $('#modal'); ov.hidden = true; ov.innerHTML = ''; }
+function armDelete(btn, action, armedText = '再按一次確認刪除') {
+  if (!btn) return;
+  const orig = btn.textContent;
+  btn.addEventListener('click', async () => {
+    if (!btn.classList.contains('armed')) { btn.classList.add('armed'); btn.textContent = armedText; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.classList.remove('armed'); btn.textContent = orig; }, 4000); return; }
+    btn.disabled = true; await action(); btn.disabled = false; btn.classList.remove('armed'); btn.textContent = orig;
+  });
+}
+
+/* ================= events ================= */
+function go(view) { if (location.hash !== '#' + view) location.hash = view; else route(); }
+function route() { const v = (location.hash || '').slice(1); UI.view = VIEWS[v] ? v : 'overview'; built.view = null; renderAll(); window.scrollTo(0, 0); }
+window.addEventListener('hashchange', route);
+$('#g-p').addEventListener('change', e => { UI.product = e.target.value; saveUI(); built.view = UI.view === 'data' ? null : built.view; renderAll(); });
+$('#g-m').addEventListener('change', e => { UI.market = e.target.value; saveUI(); built.view = UI.view === 'data' ? null : built.view; renderAll(); });
+$('#g-r').addEventListener('click', e => { const b = e.target.closest('button[data-r]'); if (!b) return; UI.range = b.dataset.r; saveUI(); renderAll(); });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' || e.target.closest('[data-close]')) closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#modal').hidden) closeModal();
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.irow, .stat[role=button]')) { e.preventDefault(); e.target.click(); }
+});
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (t.dataset.act === 'mrole') {
+    const email = t.dataset.id;
+    if (await W(() => q(sb.from('members').update({ role: t.value }).eq('email', email)), `已更新 ${email} 的權限`)) { await loadMembers(); updateSettings(); }
+    return;
+  }
+  if (t.dataset.act === 'status') {
+    const id = t.dataset.id, it = S.issues.get(id); if (!it) return;
+    await W(() => serial('issues/' + id, () => db.doc('issues/' + id).update({ status: t.value, updatedAt: Date.now() })), `已改為「${stMeta(it.type, t.value)[1]}」`);
+  }
+});
+document.addEventListener('click', async e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const a = el.dataset.act, id = el.dataset.id;
+  switch (a) {
+    case 'status': return;
+    case 'go': go(id); break;
+    case 'gobugs': UI.f.bug.pri = el.dataset.pri; UI.f.bug.st = 'open'; saveUI(); go('bugs'); break;
+    case 'pickproduct': UI.product = UI.product === id && UI.view === 'overview' ? 'all' : id; saveUI(); if (UI.view !== 'overview' && UI.view !== 'bugs' && UI.view !== 'features') go('overview'); else { built.view = null; renderAll(); } break;
+    case 'viewproduct': UI.product = id; saveUI(); go('overview'); break;
+    case 'pickmarket': UI.market = UI.market === id ? 'all' : id; saveUI(); renderAll(); break;
+    case 'metric': UI.metric = id; saveUI(); renderAll(); break;
+    case 'group': UI.group = id; saveUI(); renderAll(); break;
+    case 'newproduct': if (!db) { toast('目前是離線預覽，無法新增', 'err'); break; } productModal(); break;
+    case 'editproduct': productModal(id); break;
+    case 'newissue': issueModal(id); break;
+    case 'openissue': if (e.target.closest('select,.vote')) return; issueModal(null, id); break;
+    case 'ist': UI.f[el.dataset.type].st = id; saveUI(); updateIssues(el.dataset.type); break;
+    case 'vote': { e.stopPropagation(); const it = S.issues.get(id); if (it) await W(() => serial('issues/' + id, () => db.doc('issues/' + id).update({ votes: (S.issues.get(id)?.votes || 0) + 1, updatedAt: Date.now() })), '已 +1'); break; }
+    case 'loadday': $('#df-date').value = id; fillForm(); updateData(); $('#df').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); break;
+    case 'delevent': await W(() => db.doc('events/' + id).delete(), '已刪除事件'); break;
+    case 'csvcheck': csvCheck(); break;
+    case 'csvimport': csvImport(); break;
+    case 'export': exportCSV(); break;
+    case 'addmrow': $('#sf-m').insertAdjacentHTML('beforeend', mRow()); $('#sf-m .listrow:last-child .m-code').focus(); break;
+    case 'addcrow': $('#sf-c').insertAdjacentHTML('beforeend', cRow()); $('#sf-c .listrow:last-child input').focus(); break;
+    case 'delrow': el.closest('.listrow').remove(); break;
+    case 'delmember':
+      if (!el.classList.contains('armed')) { el.classList.add('armed'); el.textContent = '確認移除'; setTimeout(() => { if (el.isConnected) { el.classList.remove('armed'); el.textContent = '移除'; } }, 4000); break; }
+      if (await W(() => q(sb.from('members').delete().eq('email', id)), `已移除 ${id}`)) { await loadMembers(); updateSettings(); }
+      break;
+  }
+});
+
+route();
+boot();
+</script>
+</body>
+</html>
