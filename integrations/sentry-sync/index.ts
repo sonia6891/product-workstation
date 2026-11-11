@@ -5,6 +5,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const SOURCES = [
+  { product: 'meow-work', org: 'sole-proprietorship-jo', projectId: '4512394101325824', host: 'us.sentry.io' }, // meow-work-app
   { product: 'remindcat', org: 'sole-proprietorship-jo', projectId: '4512394069540864', host: 'us.sentry.io' },
 ];
 const isOpen = (s: string) => s !== 'done' && s !== 'wont';

@@ -30,7 +30,7 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 - 新錯誤 → 新增一筆「待處理」Bug，優先級依等級與影響人數自動給（fatal → P0，error 且 ≥ 20 人 → P1，error → P2，其他 → P3），之後可以自己改。
 - 次數、影響人數、最後發生時間會持續更新；狀態、優先級、負責人以工作站上的設定為準。
 - 在 Sentry 標成已解決（或 90 天沒再發生）→ 這裡自動變「已解決」；標了已解決之後又再發生 → 自動回到「待處理」。
-- 目前來源：提醒喵（org `sole-proprietorship-jo`、project `remindcat`）。要加其他 App，在函式的 `SOURCES` 加一行。
+- 目前來源（org `sole-proprietorship-jo`）：喵的，又要上班了（project `meow-work-app`）、提醒喵（project `remindcat`）。職缺體檢還沒裝 Sentry。要加其他 App，在函式的 `SOURCES` 加一行。
 
 需要 Supabase secret `SENTRY_AUTH_TOKEN`（Sentry → Settings → Auth Tokens，只勾 Read 權限）。沒有權杖時 Bug 追蹤頁會顯示「尚未啟用」。暫停同步：`select cron.unschedule('sentry-sync');`
 

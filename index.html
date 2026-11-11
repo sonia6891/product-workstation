@@ -1235,7 +1235,7 @@ const minsAgo = t => { if (!t) return ''; const m = Math.floor((Date.now() - t) 
 const SENTRY_ERR = { no_token: '還沒放入 Sentry 權杖', token_rejected: 'Sentry 權杖無效或權限不足' };
 function sentryBarHTML() {
   const z = S.sentry; if (!z) return '';
-  if (z.error) return `<div class="sbar"><b>Sentry 自動回報</b><span class="bad">尚未啟用：${esc(SENTRY_ERR[z.error] || z.error)}</span><span>放入權杖後，提醒喵的錯誤會自動出現在這裡。</span></div>`;
+  if (z.error) return `<div class="sbar"><b>Sentry 自動回報</b><span class="bad">尚未啟用：${esc(SENTRY_ERR[z.error] || z.error)}</span><span>放入權杖後，喵的又要上班了、提醒喵的錯誤會自動出現在這裡。</span></div>`;
   const parts = Object.entries(z.sources || {}).map(([p, v]) => v.ok ? `<span>${esc(pName(p))}：<b>${v.open}</b> 個未解決錯誤</span>` : `<span class="bad">${esc(pName(p))}：同步失敗（${esc(SENTRY_ERR[v.error] || v.error)}）</span>`).join('');
   return `<div class="sbar"><b>Sentry 自動回報</b>${parts}<span class="hint">每 2 分鐘同步・最後 ${minsAgo(z.at)}</span></div>`;
 }
