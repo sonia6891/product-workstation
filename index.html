@@ -258,6 +258,10 @@ table.t tr.click:hover td { background: var(--panel-2); }
 .empty-state h2 { font-size: 18px; }
 .empty-state p { margin: 0; color: var(--ink-2); max-width: 60ch; }
 .steps { margin: 4px 0 6px; padding-left: 20px; color: var(--ink-2); display: flex; flex-direction: column; gap: 4px; }
+.src-tag { font-size: 11.5px; color: var(--ink-2); background: var(--panel-2); border-radius: 4px; padding: 0 6px; }
+.sbar { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 13px; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 9px 14px; }
+.sbar b { color: var(--ink); font-weight: 600; }
+.sbar .bad { color: var(--bad-ink); }
 .sample-tag { font-size: 11px; color: var(--muted); border: 1px dashed var(--line-2); border-radius: 4px; padding: 0 5px; margin-left: 6px; font-weight: 400; }
 .ro-note { background: var(--accent-soft); color: var(--ink); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
 pre.code { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; font-family: var(--f-mono); font-size: 12px; overflow-x: auto; margin: 8px 0; }
@@ -544,7 +548,7 @@ function writeDays(p, m, mo, mutate) {
 const genId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 20);
 const mapOf = c => c === 'products' ? S.products : c === 'issues' ? S.issues : c === 'events' ? S.events : null;
 function applyDoc(c, id, data) {
-  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } return; }
+  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } return; }
   const m = mapOf(c); if (!m) return;
   if (data) m.set(id, Object.assign({}, data, { id })); else m.delete(id);
 }
@@ -625,7 +629,7 @@ async function fetchAll(table) {
 }
 async function loadAll() {
   const [docs, rows, subs] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics'), fetchAll('sub_events').catch(() => [])]);
-  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.cfg = DEFAULT_CFG;
+  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.sentry = null; S.cfg = DEFAULT_CFG;
   docs.forEach(d => applyDoc(d.collection, d.id, d.data));
   rows.forEach(r => applyRow(r));
   subs.forEach(r => S.subEvents.set(r.product_id + '/' + r.event_id, r));
@@ -1082,6 +1086,7 @@ function issueRow(i, mini) {
     i.version ? `<span class="mono">${esc(i.version)}</span>` : '',
     i.owner ? `<span>負責：${esc(i.owner)}</span>` : '',
     `<span>${ago(i.updatedAt || i.createdAt)}更新</span>`,
+    i.sentry ? `<span class="src-tag" title="Sentry 自動回報">Sentry・${fmtN(i.sentry.count)} 次・${fmtN(i.sentry.users)} 人・最後 ${minsAgo(i.sentry.lastSeen)}</span>` : '',
     i.sample ? '<span class="sample-tag">範例</span>' : ''
   ].join('');
   const stOpts = (i.type === 'bug' ? BUG_STATUS : FEAT_STATUS).map(([k, l]) => `<option value="${k}" ${k === i.status ? 'selected' : ''}>${l}</option>`).join('');
@@ -1099,7 +1104,7 @@ function buildIssues(el, type) {
       <label class="sel"><span>優先級</span><select id="is-pri"><option value="all">全部</option>${PRIORITY.map(([k, l]) => `<option value="${k}">${k} ${l}</option>`).join('')}</select></label>
       ${canWrite && db ? `<button class="btn primary" data-act="newissue" data-id="${type}">＋ ${type === 'bug' ? '回報 Bug' : '新增需求'}</button>` : ''}
     </div>
-    <div id="is-list"></div></div>`;
+    ${type === 'bug' ? '<div id="sentry-bar"></div>' : ''}<div id="is-list"></div></div>`;
   $('#is-pri').value = f.pri;
   $('#is-q').addEventListener('input', e => { f.q = e.target.value; saveUI(); updateIssues(type); });
   $('#is-pri').addEventListener('change', e => { f.pri = e.target.value; saveUI(); updateIssues(type); });
@@ -1109,6 +1114,7 @@ function updateIssues(type) {
   const list = $('#is-list'); if (!list) return;
   if (!S.ready) { list.innerHTML = loadingHTML(); return; }
   if (!S.products.size) { list.innerHTML = onboardingHTML(); return; }
+  if (type === 'bug' && $('#sentry-bar')) $('#sentry-bar').innerHTML = sentryBarHTML();
   const f = UI.f[type], stList = type === 'bug' ? BUG_STATUS : FEAT_STATUS;
   const all = [...S.issues.values()].filter(i => i.type === type && S.products.has(i.product) && (UI.product === 'all' || i.product === UI.product));
   const counts = { open: all.filter(i => isOpen(i.status)).length, all: all.length };
@@ -1120,6 +1126,15 @@ function updateIssues(type) {
   rows.sort((a, b) => (isOpen(b.status) - isOpen(a.status)) || (type === 'feature' ? (b.votes || 0) - (a.votes || 0) : 0) || a.priority.localeCompare(b.priority) || (b.updatedAt || 0) - (a.updatedAt || 0));
   list.innerHTML = rows.length ? `<div class="ilist">${rows.map(i => issueRow(i)).join('')}</div>` :
     `<div class="card empty-state"><h2>${all.length ? '沒有符合條件的項目' : type === 'bug' ? '還沒有 Bug 紀錄' : '還沒有功能需求'}</h2><p>${all.length ? '調整上方的狀態或優先級篩選看看。' : type === 'bug' ? '測試、客服或商店評論發現的問題都可以記在這裡，標上優先級與負責人。' : '把使用者回饋、團隊點子記下來；同樣的需求再被提出時按 ▲ 累計次數。'}</p></div>`;
+}
+const fmtN = v => Number(v || 0).toLocaleString('zh-TW');
+const minsAgo = t => { if (!t) return ''; const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? '剛剛' : m < 60 ? m + ' 分鐘前' : m < 1440 ? Math.floor(m / 60) + ' 小時前' : ago(t); };
+const SENTRY_ERR = { no_token: '還沒放入 Sentry 權杖', token_rejected: 'Sentry 權杖無效或權限不足' };
+function sentryBarHTML() {
+  const z = S.sentry; if (!z) return '';
+  if (z.error) return `<div class="sbar"><b>Sentry 自動回報</b><span class="bad">尚未啟用：${esc(SENTRY_ERR[z.error] || z.error)}</span><span>放入權杖後，提醒喵的錯誤會自動出現在這裡。</span></div>`;
+  const parts = Object.entries(z.sources || {}).map(([p, v]) => v.ok ? `<span>${esc(pName(p))}：<b>${v.open}</b> 個未解決錯誤</span>` : `<span class="bad">${esc(pName(p))}：同步失敗（${esc(SENTRY_ERR[v.error] || v.error)}）</span>`).join('');
+  return `<div class="sbar"><b>Sentry 自動回報</b>${parts}<span class="hint">每 2 分鐘同步・最後 ${minsAgo(z.at)}</span></div>`;
 }
 function issueModal(type, id) {
   const it = id ? S.issues.get(id) : null;
@@ -1141,6 +1156,7 @@ function issueModal(type, id) {
       ${type === 'feature' ? `<label class="fld"><span>被提出次數</span><input id="im-votes" type="number" min="0" step="1" value="${+d.votes || 0}"></label>
       <label class="fld"><span>需求來源</span><input id="im-src" value="${esc(d.source || '')}" placeholder="例：App Store 評論、客服、內部"></label>` : ''}
     </div>
+    ${it?.sentry?.url ? `<p class="hint">Sentry 自動回報・${fmtN(it.sentry.count)} 次・${fmtN(it.sentry.users)} 人受影響・最後發生 ${minsAgo(it.sentry.lastSeen)}　<a href="${esc(it.sentry.url)}" target="_blank" rel="noopener">在 Sentry 看詳情 ↗</a></p>` : ''}
     <label class="fld"><span>${type === 'bug' ? '描述（重現步驟、預期與實際結果）' : '描述（使用情境、為什麼需要）'}</span><textarea id="im-desc" rows="5">${esc(d.desc)}</textarea></label>
     ${it ? `<p class="hint">建立於 ${new Date(it.createdAt || Date.now()).toLocaleDateString('zh-TW')}・最後更新 ${ago(it.updatedAt)}</p>` : ''}
     <footer>${id && !ro ? '<button type="button" class="btn danger ghost" id="im-del">刪除</button>' : ''}<span class="sp"></span><button type="button" class="btn ghost" data-close>${ro ? '關閉' : '取消'}</button>${ro ? '' : '<button class="btn primary" type="submit">儲存</button>'}</footer>
@@ -1156,6 +1172,7 @@ function issueModal(type, id) {
       };
       if (type === 'feature') { body.votes = Math.max(0, parseInt($('#im-votes').value, 10) || 0); body.source = $('#im-src').value.trim(); }
       if (it?.sample) body.sample = true;
+      if (it?.sentry) body.sentry = it.sentry;
       const ok = await W(() => id ? serial('issues/' + id, () => db.doc('issues/' + id).set(body)) : db.collection('issues').add(body), '已儲存');
       if (ok) closeModal();
     });

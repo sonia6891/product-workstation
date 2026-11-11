@@ -22,3 +22,14 @@
 - 「退訂紀錄」頁：App Store 的關閉自動續訂、重新開啟、到期、退款、扣款失敗通知（`public.sub_events`，由 `public.ingest_events` 寫入），附第一次付費時間與已付金額。目前只有「喵的，又要上班了」有。
 - 營收依「設定」的幣別換算（`private.fx` 的固定匯率）。
 - 暫停同步：在來源專案執行 `select cron.unschedule('workstation-push-live'); select cron.unschedule('workstation-push-full');`
+
+## Sentry 自動回報（Bug 追蹤）
+
+Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）每 2 分鐘由 pg_cron 呼叫一次，把 Sentry 上「未解決」的錯誤寫進 Bug 追蹤：
+
+- 新錯誤 → 新增一筆「待處理」Bug，優先級依等級與影響人數自動給（fatal → P0，error 且 ≥ 20 人 → P1，error → P2，其他 → P3），之後可以自己改。
+- 次數、影響人數、最後發生時間會持續更新；狀態、優先級、負責人以工作站上的設定為準。
+- 在 Sentry 標成已解決（或 90 天沒再發生）→ 這裡自動變「已解決」；標了已解決之後又再發生 → 自動回到「待處理」。
+- 目前來源：提醒喵（org `sole-proprietorship-jo`、project `remindcat`）。要加其他 App，在函式的 `SOURCES` 加一行。
+
+需要 Supabase secret `SENTRY_AUTH_TOKEN`（Sentry → Settings → Auth Tokens，只勾 Read 權限）。沒有權杖時 Bug 追蹤頁會顯示「尚未啟用」。暫停同步：`select cron.unschedule('sentry-sync');`
