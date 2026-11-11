@@ -37,6 +37,13 @@ begin
         'application/json', jsonb_build_object('p_key', c.ingest_key, 'p_product', c.product_id, 'p_events', v_events)::text)::extensions.http_request);
     end if;
   end if;
+  -- Current subscription picture (訂閱現況), when this app exports it.
+  if to_regprocedure('workstation.export_subs()') is not null then
+    execute 'select workstation.export_subs()' into v_events;
+    perform extensions.http(('POST', c.url || '/rest/v1/rpc/ingest_snapshot',
+      array[extensions.http_header('apikey', c.anon_key), extensions.http_header('Authorization', 'Bearer ' || c.anon_key)],
+      'application/json', jsonb_build_object('p_key', c.ingest_key, 'p_product', c.product_id, 'p_snap', v_events)::text)::extensions.http_request);
+  end if;
   update workstation.config set last_status = r.status, last_body = left(r.content, 500), last_at = now() where id = 1;
   return r.status;
 end $fn$;

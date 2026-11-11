@@ -131,3 +131,53 @@ select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
 from ev
 $fn$;
 revoke execute on function workstation.export_events(timestamptz) from public, anon, authenticated;
+
+-- 訂閱現況 card: subscriptions active right now, split by plan and by whether auto-renew is still on,
+-- plus this month's new subscriptions / renewals turned off / expiries. push() sends it to public.ingest_snapshot.
+create or replace function workstation.export_subs() returns jsonb
+language sql stable set search_path = '' as $fn$
+with
+all_ev as (
+  select e.*, case when jsonb_typeof(e.raw->'transaction') = 'object' then e.raw->'transaction' else e.raw end t
+  from public.store_subscription_events e where e.environment = 'Production'
+),
+tx as (
+  select distinct on (t->>'transactionId')
+    t->>'transactionId' tid, coalesce(t->>'originalTransactionId', original_transaction_id) otid,
+    to_timestamp((t->>'purchaseDate')::numeric / 1000) pd,
+    to_timestamp(nullif(t->>'expiresDate', '')::numeric / 1000) ed,
+    coalesce(t->>'productId', product_id) prod,
+    t->>'offerType' = '1' and coalesce(nullif(t->>'price', '')::numeric, 0) = 0 trial,
+    t ? 'revocationDate' revoked
+  from all_ev where t ? 'transactionId' and t ? 'purchaseDate'
+  order by t->>'transactionId', created_at
+),
+cur as (
+  select distinct on (otid) otid, prod, trial, ed from tx where pd <= now() and ed > now() and not revoked order by otid, pd desc
+),
+renew as (
+  select distinct on (coalesce(original_transaction_id, t->>'originalTransactionId'))
+    coalesce(original_transaction_id, t->>'originalTransactionId') otid, subtype = 'AUTO_RENEW_DISABLED' off
+  from all_ev where event_type = 'DID_CHANGE_RENEWAL_STATUS'
+  order by coalesce(original_transaction_id, t->>'originalTransactionId'), created_at desc
+),
+a as (
+  select case when c.prod ~* 'year|annual' then 'yearly' when c.prod ~* 'month' then 'monthly' else 'other' end plan,
+    c.trial, coalesce(r.off, false) off
+  from cur c left join renew r on r.otid = c.otid
+),
+m0 as (select date_trunc('month', now() at time zone 'Asia/Taipei') at time zone 'Asia/Taipei' t0),
+firsts as (select otid, min(pd) first_pd, (array_agg(prod order by pd))[1] prod from tx group by otid)
+select jsonb_build_object(
+  'at', (extract(epoch from now()) * 1000)::bigint,
+  'plans', coalesce((select jsonb_object_agg(plan, jsonb_build_object('active', n, 'renewing', rn, 'off', o, 'trial', tr)) from (
+     select plan, count(*) n, count(*) filter (where not off) rn, count(*) filter (where off) o, count(*) filter (where trial) tr from a group by plan) z), '{}'::jsonb),
+  'month_new', (select count(*) from firsts, m0 where first_pd >= m0.t0),
+  'month_new_plans', coalesce((select jsonb_object_agg(plan, n) from (
+     select case when prod ~* 'year|annual' then 'yearly' when prod ~* 'month' then 'monthly' else 'other' end plan, count(*) n
+     from firsts, m0 where first_pd >= m0.t0 group by 1) z), '{}'::jsonb),
+  'month_off', (select count(*) from all_ev, m0 where event_type = 'DID_CHANGE_RENEWAL_STATUS' and subtype = 'AUTO_RENEW_DISABLED' and created_at >= m0.t0),
+  'month_expired', (select count(*) from all_ev, m0 where event_type = 'EXPIRED' and created_at >= m0.t0)
+)
+$fn$;
+revoke execute on function workstation.export_subs() from public, anon, authenticated;

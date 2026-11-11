@@ -430,7 +430,7 @@ const isOpen = s => s !== 'done' && s !== 'wont';
 const SLOT = i => `var(--s${(i % 8) + 1})`;
 
 /* ================= state ================= */
-const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), subEvents: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
+const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), subEvents: new Map(), subs: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
 const UI = { view: 'overview', product: 'all', market: 'all', range: '30', metric: 'dl', group: 'auto', f: { bug: { st: 'open', pri: 'all', q: '' }, feature: { st: 'open', pri: 'all', q: '' } } };
 try { const saved = JSON.parse(localStorage.getItem('pws-ui') || 'null'); if (saved) Object.assign(UI, saved, { f: Object.assign(UI.f, saved.f || {}) }); } catch (e) {}
 function saveUI() { try { localStorage.setItem('pws-ui', JSON.stringify({ product: UI.product, market: UI.market, range: UI.range, metric: UI.metric, group: UI.group, f: UI.f })); } catch (e) {} }
@@ -544,7 +544,7 @@ function writeDays(p, m, mo, mutate) {
 const genId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 20);
 const mapOf = c => c === 'products' ? S.products : c === 'issues' ? S.issues : c === 'events' ? S.events : null;
 function applyDoc(c, id, data) {
-  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } return; }
+  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } return; }
   const m = mapOf(c); if (!m) return;
   if (data) m.set(id, Object.assign({}, data, { id })); else m.delete(id);
 }
@@ -625,7 +625,7 @@ async function fetchAll(table) {
 }
 async function loadAll() {
   const [docs, rows, subs] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics'), fetchAll('sub_events').catch(() => [])]);
-  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.cfg = DEFAULT_CFG;
+  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.cfg = DEFAULT_CFG;
   docs.forEach(d => applyDoc(d.collection, d.id, d.data));
   rows.forEach(r => applyRow(r));
   subs.forEach(r => S.subEvents.set(r.product_id + '/' + r.event_id, r));
@@ -1053,6 +1053,7 @@ function renderOverview(el) {
 
   el.innerHTML = `<div class="grid12">
     ${liveHTML}
+    ${subsNowHTML()}
     <div class="kpis span12">${tiles}</div>
     <section class="card span12"><header><h3>成長趨勢<small>${esc(METRICS[UI.metric].name)}・${P.gran === 'day' ? '每日' : '每月'}${evs.length ? '・◆ 為事件標記' : ''}</small></h3><div class="seg">${groupSeg}</div></header>
       <div class="chips" style="margin-bottom:12px">${metricChips}</div>
@@ -1163,6 +1164,25 @@ function issueModal(type, id) {
 }
 
 /* ================= view: products ================= */
+/* ================= subscriptions right now (pushed by each app, see README) ================= */
+function subsNowHTML() {
+  const snaps = [...S.subs.entries()].filter(([p]) => S.products.has(p) && (UI.product === 'all' || UI.product === p)).map(([, s]) => s);
+  if (!snaps.length) return '';
+  const PL = [['monthly', '月費'], ['yearly', '年費'], ['other', '其他']];
+  const sum = (plan, k) => snaps.reduce((a, s) => a + (+(s.plans?.[plan]?.[k]) || 0), 0);
+  const newOf = plan => snaps.reduce((a, s) => a + (+(s.month_new_plans?.[plan]) || 0), 0);
+  const tot = k => PL.reduce((a, [p]) => a + sum(p, k), 0);
+  const total = { active: tot('active'), renewing: tot('renewing'), off: tot('off'), trial: tot('trial') };
+  const rows = PL.filter(([p]) => sum(p, 'active') || newOf(p)).map(([p, l]) =>
+    `<tr><td>${l}</td><td class="n">${fmtVal(sum(p, 'active'), 'int')}</td><td class="n">${fmtVal(sum(p, 'renewing'), 'int')}</td><td class="n">${fmtVal(sum(p, 'off'), 'int')}</td><td class="n">${fmtVal(sum(p, 'trial'), 'int')}</td><td class="n">${fmtVal(newOf(p), 'int')}</td></tr>`).join('');
+  const monthNew = snaps.reduce((a, s) => a + (+s.month_new || 0), 0), monthOff = snaps.reduce((a, s) => a + (+s.month_off || 0), 0), monthExp = snaps.reduce((a, s) => a + (+s.month_expired || 0), 0);
+  const mo = +TODAY.slice(5, 7);
+  return `<section class="card span12"><header><h3>訂閱現況<small>此刻的有效訂閱・依 App Store 通知即時更新</small></h3><button class="btn sm" data-act="go" data-id="churn">退訂紀錄</button></header>
+    <div class="tw"><table class="t"><thead><tr><th>方案</th><th class="n">有效訂閱</th><th class="n">會自動續訂</th><th class="n">已關閉續訂</th><th class="n">試用中</th><th class="n">${mo} 月新訂閱</th></tr></thead>
+    <tbody>${rows}<tr><td><b>合計</b></td><td class="n"><b>${fmtVal(total.active, 'int')}</b></td><td class="n"><b>${fmtVal(total.renewing, 'int')}</b></td><td class="n"><b>${fmtVal(total.off, 'int')}</b></td><td class="n"><b>${fmtVal(total.trial, 'int')}</b></td><td class="n"><b>${fmtVal(monthNew, 'int')}</b></td></tr></tbody></table></div>
+    <p class="hint" style="margin:10px 0 0">「已關閉續訂」的人這一期已付費、到期前仍可使用，但到期後不會再扣款。${mo} 月至今：新訂閱 ${monthNew}・關閉續訂 ${monthOff}・到期失效 ${monthExp}。</p></section>`;
+}
+
 /* ================= render: cancellations ================= */
 const SUBKIND = { cancel: ['關閉自動續訂', 'st-check'], resume: ['重新開啟續訂', 'st-done'], expire: ['到期失效', 'st-off'], refund: ['退款', 'st-active'], billing_fail: ['扣款失敗', 'st-active'] };
 const EXPIRE_WHY = { VOLUNTARY: '自己取消', BILLING_RETRY: '扣款失敗', PRICE_INCREASE: '不同意漲價', PRODUCT_NOT_FOR_SALE: '商品下架' };
