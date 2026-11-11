@@ -398,6 +398,20 @@ pre.code { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; f
   .toast { animation: rise .18s ease-out; }
   @keyframes rise { from { transform: translate(-50%, 8px); opacity: 0; } }
 }
+/* Picked controls wear the app's red leather with a light stitched seam (same in light and dark). */
+:root:not([data-skin="classic"]) :is(.seg button, .chip, .nav a, .stat, .btn.primary) { position: relative; }
+:root:not([data-skin="classic"]) :is(.seg button.on, .chip.on, .nav a.on, .stat.on, .btn.primary) {
+  background: linear-gradient(180deg, #c55d51 0%, #bb453d 16%, #bb453d 84%, #c4584b 100%); border-color: #9b4334; color: #fff7ec;
+  text-shadow: 0 1px 0 rgba(70,16,10,.45); box-shadow: 0 4px 8px rgba(127,36,28,.22), 0 2px 0 #7f241c, inset 0 1px 0 rgba(255,255,255,.16);
+}
+:root:not([data-skin="classic"]) :is(.seg button.on, .chip.on, .nav a.on, .stat.on, .btn.primary)::after {
+  content: ""; position: absolute; inset: 2.5px; border: 1.2px dashed rgba(255,241,226,.6); border-radius: inherit; pointer-events: none;
+}
+:root:not([data-skin="classic"]) .stat.on :is(b, span) { color: #fff7ec; }
+:root:not([data-skin="classic"]) .nav a.on em { background: rgba(255,247,236,.92); color: #9b4334; }
+:root:not([data-skin="classic"]) .btn.primary:hover { opacity: 1; filter: brightness(1.06); }
+:root:not([data-skin="classic"]) .skin-pick button.on { position: relative; border-color: #9b4334; }
+:root:not([data-skin="classic"]) .skin-pick button.on::after { content: ""; position: absolute; inset: 3px; border: 1.2px dashed rgba(168,61,53,.55); border-radius: 9px; pointer-events: none; }
 /* 經典 skin: undo the paper details (stitches, serif titles, leather controls). */
 :root[data-skin="classic"] :is(.card, .kpis, .live, .ilist, .sbar, .auth-card)::before { display: none; }
 :root[data-skin="classic"] :is(.card, .kpis, .live, .ilist, .sbar, .auth-card) { border-width: 1px !important; box-shadow: none; }
