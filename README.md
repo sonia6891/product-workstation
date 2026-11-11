@@ -42,7 +42,18 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 - 只推新分支，不動 main、不合併。iOS 程式在 GitHub 上無法編譯，要自己用 Xcode build 過再送審。
 - 用的是 Claude 訂閱（secret `CLAUDE_CODE_OAUTH_TOKEN`，在電腦上跑 `claude setup-token` 產生），不需要 API 金鑰，電腦不用開著。
 - 產品對應的倉庫寫在 `index.html` 的 `STATION_REPO`：喵的，又要上班了 → `sonia6891/meow-work-app`，提醒喵 → `sonia6891/RemindCat`。沒有對應倉庫的產品不會出現這個按鈕。
-- issue 內容最後有「工作站編號 pws:…」，工作站上的「在 GitHub 看進度」就是用它搜尋。
+- issue 內容最後有「工作站編號 pws:…」，工作站用它找到對應的 issue。
+
+### 站長回報（不用開 GitHub）
+
+Edge function `station-sync`（原始碼 `integrations/station-sync/index.ts`）每 2 分鐘由 pg_cron 呼叫一次，把站長的進度寫回那筆 Bug／需求：
+
+- 列表上會出現「站長・處理中 2/5」這類標籤；打開那筆，可以看到進度條和站長的完整回報（原因、改了什麼），還有「開 PR」「看 PR、合併」的按鈕。
+- 進度依序是：等你送出 → 已收到 → 處理中 → 做完了 → 已開 PR → 已合併。出錯也會顯示。
+- PR 合併後，Bug 會自動從「處理中」改成「待驗證」，等你用新版本確認沒問題，再自己改成「已解決」。
+- 交出 30 分鐘後還找不到 issue，會顯示「還沒在 GitHub 送出」，按「再交一次」就好。
+
+需要 Supabase secret `STATION_GITHUB_TOKEN`：GitHub → Settings → Developer settings → Fine-grained tokens，Repository access 選 App 倉庫（`meow-work-app`、`RemindCat`），權限只給 Issues、Pull requests 的 **Read-only**。沒有權杖時，站長區塊會顯示「自動回報尚未啟用」。暫停：`select cron.unschedule('station-sync');`
 
 ## 外觀
 

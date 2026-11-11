@@ -188,6 +188,12 @@ main { min-width: 0; padding-block: 22px 60px; padding-left: 28px; padding-right
 .station > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .station small { color: var(--muted); font-size: 12.5px; }
 .station .btn { flex: none; text-decoration: none; display: inline-flex; align-items: center; }
+.station-wrap { display: flex; flex-direction: column; gap: 8px; }
+.stn-stage { font-weight: 600; color: var(--ink-2); }
+.stn-stage.busy, .src-tag.stn.busy { color: var(--accent); } .stn-stage.ok, .src-tag.stn.ok { color: var(--good-ink); } .stn-stage.bad, .src-tag.stn.bad, .station .bad { color: var(--bad-ink); }
+.stn-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 4px; } .stn-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+.stn-report { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; color: var(--ink); max-height: 320px; overflow: auto; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.stn-report code { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; background: var(--panel); padding: 0 4px; border-radius: 4px; }
 .grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
 .span12 { grid-column: span 12; } .span7 { grid-column: span 7; } .span5 { grid-column: span 5; } .span6 { grid-column: span 6; }
 
@@ -715,7 +721,7 @@ function writeDays(p, m, mo, mutate) {
 const genId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 20);
 const mapOf = c => c === 'products' ? S.products : c === 'issues' ? S.issues : c === 'events' ? S.events : null;
 function applyDoc(c, id, data) {
-  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } return; }
+  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id === 'station') S.station = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } return; }
   const m = mapOf(c); if (!m) return;
   if (data) m.set(id, Object.assign({}, data, { id })); else m.delete(id);
 }
@@ -796,7 +802,7 @@ async function fetchAll(table) {
 }
 async function loadAll() {
   const [docs, rows, subs] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics'), fetchAll('sub_events').catch(() => [])]);
-  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.sentry = null; S.cfg = DEFAULT_CFG;
+  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.sentry = null; S.station = null; S.cfg = DEFAULT_CFG;
   docs.forEach(d => applyDoc(d.collection, d.id, d.data));
   rows.forEach(r => applyRow(r));
   subs.forEach(r => S.subEvents.set(r.product_id + '/' + r.event_id, r));
@@ -1255,6 +1261,7 @@ function issueRow(i, mini) {
     i.version ? `<span class="mono">${esc(i.version)}</span>` : '',
     i.owner ? `<span>負責：${esc(i.owner)}</span>` : '',
     `<span>${ago(i.updatedAt || i.createdAt)}更新</span>`,
+    i.station ? stationTag(i) : '',
     i.sentry ? `<span class="src-tag" title="Sentry 自動回報">Sentry・${fmtN(i.sentry.count)} 次・${fmtN(i.sentry.users)} 人・最後 ${minsAgo(i.sentry.lastSeen)}</span>` : '',
     i.sample ? '<span class="sample-tag">範例</span>' : ''
   ].join('');
@@ -1376,14 +1383,51 @@ function stationIssueURL(it) {
   ].filter(l => typeof l === 'string');
   return `https://github.com/${repo}/issues/new?title=${encodeURIComponent(cut(`[${it.priority}] ${it.title}`, 200))}&body=${encodeURIComponent(lines.join('\n'))}`;
 }
+// What 站長 is doing, as written back by the station-sync edge function (see README).
+const STAGE = {
+  unsent: ['還沒在 GitHub 送出', 'bad'], queued: ['已收到，準備開工', ''], working: ['處理中', 'busy'], reported: ['做完了，請看回報', 'ok'],
+  pr: ['已開 PR，等你合併', 'ok'], merged: ['已合併，等你驗證', 'ok'], pr_closed: ['PR 已關閉（沒合併）', ''], failed: ['出錯了', 'bad'], closed: ['issue 已關閉', '']
+};
+const STATION_ERR = { no_token: '還沒放入 GitHub 權杖', token_rejected: 'GitHub 權杖無效', no_access: 'GitHub 權杖讀不到這個倉庫' };
+const stageText = st => {
+  if (!st.stage) return '已交出，等站長回報…';
+  if (st.stage === 'unsent' && Date.now() - st.at < 30 * 60000) return '等你在 GitHub 按「Submit new issue」';
+  if (st.stage === 'reported' && !st.prCreate && !st.branch) return '回報了（這次沒有改程式）';
+  return STAGE[st.stage]?.[0] || st.stage;
+};
+const stageProgress = st => st.stage === 'working' && st.total ? ` ${st.done}/${st.total}` : '';
+function stationTag(i) {
+  const st = i.station, cls = STAGE[st.stage]?.[1] || '';
+  return `<span class="src-tag stn ${cls}" title="站長（Claude）">站長・${esc(stageText(st))}${stageProgress(st)}</span>`;
+}
+// Claude's report is Markdown; show it as text with checkboxes, bold, code and GitHub links. Everything is escaped first.
+function mdLite(t) {
+  return esc(t).split('\n').map(l => l
+    .replace(/^\s*[-*] \[[xX]\] /, '✅ ').replace(/^\s*[-*] \[ \] /, '⬜ ')
+    .replace(/^#{1,6} (.*)$/, '<b>$1</b>')
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\((https:\/\/github\.com\/[^)\s"]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  ).join('\n');
+}
 function stationHTML(it) {
   const repo = stationRepo(it.product);
   if (!repo) return '';
-  const track = `https://github.com/${repo}/issues?q=${encodeURIComponent(`is:issue "pws:${it.id}"`)}`;
-  return `<div class="station"><div><b>站長</b><small>${it.station
-    ? `已交給站長・${ago(it.station.at)}　<a href="${esc(track)}" target="_blank" rel="noopener">在 GitHub 看進度 ↗</a>`
-    : '交給 Claude：找原因、開修正分支，在 GitHub 回報。不會動正式版。'}</small></div>
-    <a class="btn sm ${it.station ? '' : 'primary'}" id="im-station" href="${esc(stationIssueURL(it))}" target="_blank" rel="noopener">${it.station ? '再交一次' : '交給站長'}</a></div>`;
+  const st = it.station, z = S.station;
+  const track = st?.url || `https://github.com/${repo}/issues?q=${encodeURIComponent(`is:issue "pws:${it.id}"`)}`;
+  const links = st ? [
+    st.pr ? `<a href="${esc(st.pr.url)}" target="_blank" rel="noopener">${st.pr.merged ? '看已合併的 PR' : '看 PR、合併'} ↗</a>`
+      : st.prCreate ? `<a href="${esc(st.prCreate)}" target="_blank" rel="noopener">開 PR ↗</a>` : '',
+    `<a href="${esc(track)}" target="_blank" rel="noopener">GitHub ↗</a>`
+  ].filter(Boolean).join('　') : '';
+  const off = z?.error ? `　<span class="bad">自動回報尚未啟用（${esc(STATION_ERR[z.error] || z.error)}）</span>` : '';
+  const line = st
+    ? `<span class="stn-stage ${STAGE[st.stage]?.[1] || ''}">${esc(stageText(st))}${stageProgress(st)}</span>・交出 ${ago(st.at)}${z?.ok && z.at ? `・${minsAgo(z.at)}檢查過` : ''}　${links}${off}`
+    : '交給 Claude：找原因、開修正分支，做完回報在這裡。不會動正式版。';
+  const bar = st?.stage === 'working' && st.total ? `<div class="stn-bar"><i style="width:${Math.round(100 * st.done / st.total)}%"></i></div>` : '';
+  const report = st?.summary ? `<div class="stn-report">${mdLite(st.summary)}</div>` : '';
+  return `<div class="station-wrap"><div class="station"><div><b>站長</b><small>${line}</small>${bar}</div>
+    <a class="btn sm ${st ? '' : 'primary'}" id="im-station" href="${esc(stationIssueURL(it))}" target="_blank" rel="noopener">${st ? '再交一次' : '交給站長'}</a></div>${report}</div>`;
 }
 
 /* ================= view: products ================= */
