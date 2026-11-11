@@ -115,10 +115,16 @@ Deno.serve(async () => {
       rs.following++;
       const old = d.data.station;
       const same = (k: keyof Station) => JSON.stringify(old[k] ?? null) === JSON.stringify(s[k] ?? null);
-      if ((['stage', 'issue', 'done', 'total', 'summary', 'branch', 'prCreate', 'pr', 'url'] as const).every(same)) continue;
-      const next: Record<string, any> = { ...d.data, station: s, updatedAt: Date.now() };
-      // Merged → the bug is waiting for you to check it in a build (待驗證). Only moves it forward from 處理中.
-      if (s.stage === 'merged' && old.stage !== 'merged' && d.data.type === 'bug' && d.data.status === 'doing') next.status = 'verify';
+      // A bug's 狀態 follows what really happens on GitHub: 處理中 only once 站長 has the issue, 待驗證 once the fix is merged,
+      // back to 待處理 if it was never sent, failed, or the PR was closed. 待驗證／已解決／不處理 that you set are left alone.
+      let bugStatus = d.data.status;
+      if (d.data.type === 'bug' && (bugStatus === 'new' || bugStatus === 'doing')) {
+        if (s.stage === 'merged') bugStatus = 'verify';
+        else if (['queued', 'working', 'reported', 'pr'].includes(s.stage!)) bugStatus = 'doing';
+        else if (['failed', 'pr_closed', 'closed'].includes(s.stage!) || (s.stage === 'unsent' && Date.now() - s.at > 30 * 60_000)) bugStatus = 'new';
+      }
+      if (bugStatus === d.data.status && (['stage', 'issue', 'done', 'total', 'summary', 'branch', 'prCreate', 'pr', 'url'] as const).every(same)) continue;
+      const next: Record<string, any> = { ...d.data, station: s, status: bugStatus, updatedAt: Date.now() };
       // Write only if nobody edited the item since we read it; otherwise the next run tries again.
       const { error: e2 } = await sb.from('docs').update({ data: next, updated_at: new Date().toISOString(), updated_by: 'station' })
         .match({ collection: 'issues', id: d.id, updated_at: d.updated_at });

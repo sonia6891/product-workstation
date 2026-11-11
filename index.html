@@ -1355,12 +1355,12 @@ function issueModal(type, id) {
       if (ok) closeModal();
     });
     armDelete($('#im-del', sheet), async () => { if (await W(() => db.doc('issues/' + id).delete(), '已刪除')) closeModal(); });
-    // 交給站長: the link itself opens GitHub (so phones don't block it); here the bug is marked 處理中 by 站長.
+    // 交給站長: the link itself opens GitHub (so phones don't block it). The 狀態 is not touched here: station-sync
+    // moves the bug to 處理中 only once the GitHub issue exists and 站長 has it.
     $('#im-station', sheet)?.addEventListener('click', () => {
       const repo = stationRepo(it.product), owner = $('#im-owner').value.trim() || '站長';
-      const st = it.type === 'bug' ? 'doing' : it.status;
-      $('#im-st').value = st; $('#im-owner').value = owner;
-      W(() => serial('issues/' + id, () => db.doc('issues/' + id).update({ status: st, owner, station: { repo, at: Date.now() }, updatedAt: Date.now() })), '已交給站長，請在 GitHub 按「Submit new issue」');
+      $('#im-owner').value = owner;
+      W(() => serial('issues/' + id, () => db.doc('issues/' + id).update({ owner, station: { repo, at: Date.now() }, updatedAt: Date.now() })), '請在 GitHub 按「Submit new issue」，送出後這裡才會變「處理中」');
     });
   });
 }
@@ -1390,7 +1390,7 @@ const STAGE = {
 };
 const STATION_ERR = { no_token: '還沒放入 GitHub 權杖', token_rejected: 'GitHub 權杖無效', no_access: 'GitHub 權杖讀不到這個倉庫' };
 const stageText = st => {
-  if (!st.stage) return '已交出，等站長回報…';
+  if (!st.stage) return S.station?.error ? '進度未知（還沒接上 GitHub）' : '已交出，等站長回報…';
   if (st.stage === 'unsent' && Date.now() - st.at < 30 * 60000) return '等你在 GitHub 按「Submit new issue」';
   if (st.stage === 'reported' && !st.prCreate && !st.branch) return '回報了（這次沒有改程式）';
   return STAGE[st.stage]?.[0] || st.stage;
