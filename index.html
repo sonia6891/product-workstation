@@ -461,6 +461,9 @@ pre.code { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; f
 :root[data-skin="classic"] .btn.primary { font-weight: 500; box-shadow: none; }
 :root[data-skin="classic"] .brand .mark { box-shadow: none; }
 :root[data-skin="classic"] .sheet { border-width: 1px !important; border-radius: 14px; }
+.theme-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-weight: 600; color: var(--ink-2); }
+.theme-row .seg button { padding-inline: 16px; height: 32px; font-size: 14px; }
+@media (max-width: 520px) { .theme-row .seg { flex: 1; display: flex; } .theme-row .seg button { flex: 1; padding-inline: 4px; } }
 .skin-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 150px)); gap: 10px; }
 .skin-pick button { display: flex; flex-direction: column; gap: 8px; align-items: center; padding: 10px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--field); cursor: pointer; font-weight: 500; }
 .skin-pick button.on { border: 2px solid var(--accent); background: var(--accent-soft); padding: 9px; font-weight: 700; }
@@ -471,7 +474,22 @@ pre.code { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; f
 .skin-pick .classic { background: #f3f5f7; border: 1px solid #c8ced7; }
 .skin-pick .classic::after { background: #ffffff; border: 1px solid #e0e4e9; }
 </style>
-<script>try { if (localStorage.getItem('pws-skin') === 'classic') document.documentElement.dataset.skin = 'classic'; } catch (e) {}</script>
+<script>
+// Skin (喵風格/經典) and light/dark (跟隨系統/淺色/深色) are per device, chosen in 設定 → 外觀.
+function applyTheme(t) {
+  const r = document.documentElement;
+  if (t === 'light' || t === 'dark') r.dataset.theme = t; else delete r.dataset.theme;
+  const tc = { light: '#eadfcb', dark: '#2b2019' };
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+    const own = /dark/.test(m.media) ? 'dark' : 'light';
+    m.content = tc[t === 'light' || t === 'dark' ? t : own];
+  });
+}
+try {
+  if (localStorage.getItem('pws-skin') === 'classic') document.documentElement.dataset.skin = 'classic';
+  applyTheme(localStorage.getItem('pws-theme'));
+} catch (e) {}
+</script>
 </head>
 <body>
 
@@ -1705,11 +1723,19 @@ function setSkin(k) {
   try { localStorage.setItem('pws-skin', k); } catch (e) {}
   $$('#skin-pick button').forEach(b => { const on = b.dataset.id === k; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
 }
+const theme = () => document.documentElement.dataset.theme || 'auto';
+const THEMES = [['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']];
+function setTheme(k) {
+  applyTheme(k);
+  try { if (k === 'auto') localStorage.removeItem('pws-theme'); else localStorage.setItem('pws-theme', k); } catch (e) {}
+  $$('#theme-pick button').forEach(b => { const on = b.dataset.id === k; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+}
 function buildSettings(el) {
   const ro = !(canWrite && db);
   const c = S.cfg;
   el.innerHTML = `<div class="grid12">
-    <section class="card span12"><header><h3>外觀<small>只影響這台裝置，深色或淺色跟著系統設定</small></h3></header>
+    <section class="card span12"><header><h3>外觀<small>只影響這台裝置</small></h3></header>
+      <div class="theme-row"><span>深淺</span><div class="seg" id="theme-pick" role="group" aria-label="深淺">${THEMES.map(([k, l]) => `<button type="button" data-act="theme" data-id="${k}" aria-pressed="${theme() === k}" class="${theme() === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       <div class="skin-pick" id="skin-pick">${[['meow', '喵風格'], ['classic', '經典']].map(([k, l]) => `<button type="button" data-act="skin" data-id="${k}" aria-pressed="${skin() === k}" class="${skin() === k ? 'on' : ''}"><i class="${k}"></i>${l}</button>`).join('')}</div>
     </section>
     <section class="card span6"><header><h3>幣別與市場</h3></header>
@@ -1872,6 +1898,7 @@ document.addEventListener('click', async e => {
     case 'go': go(id); break;
     case 'gobugs': UI.f.bug.pri = el.dataset.pri; UI.f.bug.st = 'open'; saveUI(); go('bugs'); break;
     case 'skin': setSkin(id); break;
+    case 'theme': setTheme(id); break;
     case 'more': moreMenu($('#more-menu').hidden); break;
     case 'pickproduct': UI.product = UI.product === id && UI.view === 'overview' ? 'all' : id; saveUI(); if (UI.view !== 'overview' && UI.view !== 'bugs' && UI.view !== 'features') go('overview'); else { built.view = null; renderAll(); } break;
     case 'viewproduct': UI.product = id; saveUI(); go('overview'); break;
