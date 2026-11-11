@@ -184,6 +184,10 @@ main { min-width: 0; padding-block: 22px 60px; padding-left: 28px; padding-right
 .card h3 small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 8px; }
 .card h4 { font-size: 13px; font-weight: 500; color: var(--ink-2); margin: 16px 0 8px; }
 .hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+.station { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px dashed var(--stitch, var(--line-2)); border-radius: 12px; background: var(--panel-2); }
+.station > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.station small { color: var(--muted); font-size: 12.5px; }
+.station .btn { flex: none; text-decoration: none; display: inline-flex; align-items: center; }
 .grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
 .span12 { grid-column: span 12; } .span7 { grid-column: span 7; } .span5 { grid-column: span 5; } .span6 { grid-column: span 6; }
 
@@ -1322,6 +1326,7 @@ function issueModal(type, id) {
       <label class="fld"><span>需求來源</span><input id="im-src" value="${esc(d.source || '')}" placeholder="例：App Store 評論、客服、內部"></label>` : ''}
     </div>
     ${it?.sentry?.url ? `<p class="hint">Sentry 自動回報・${fmtN(it.sentry.count)} 次・${fmtN(it.sentry.users)} 人受影響・最後發生 ${minsAgo(it.sentry.lastSeen)}　<a href="${esc(it.sentry.url)}" target="_blank" rel="noopener">在 Sentry 看詳情 ↗</a></p>` : ''}
+    ${it && !ro ? stationHTML(it) : ''}
     <label class="fld"><span>${type === 'bug' ? '描述（重現步驟、預期與實際結果）' : '描述（使用情境、為什麼需要）'}</span><textarea id="im-desc" rows="5">${esc(d.desc)}</textarea></label>
     ${it ? `<p class="hint">建立於 ${new Date(it.createdAt || Date.now()).toLocaleDateString('zh-TW')}・最後更新 ${ago(it.updatedAt)}</p>` : ''}
     <footer>${id && !ro ? '<button type="button" class="btn danger ghost" id="im-del">刪除</button>' : ''}<span class="sp"></span><button type="button" class="btn ghost" data-close>${ro ? '關閉' : '取消'}</button>${ro ? '' : '<button class="btn primary" type="submit">儲存</button>'}</footer>
@@ -1338,11 +1343,47 @@ function issueModal(type, id) {
       if (type === 'feature') { body.votes = Math.max(0, parseInt($('#im-votes').value, 10) || 0); body.source = $('#im-src').value.trim(); }
       if (it?.sample) body.sample = true;
       if (it?.sentry) body.sentry = it.sentry;
+      const station = S.issues.get(id)?.station; if (station) body.station = station;
       const ok = await W(() => id ? serial('issues/' + id, () => db.doc('issues/' + id).set(body)) : db.collection('issues').add(body), '已儲存');
       if (ok) closeModal();
     });
     armDelete($('#im-del', sheet), async () => { if (await W(() => db.doc('issues/' + id).delete(), '已刪除')) closeModal(); });
+    // 交給站長: the link itself opens GitHub (so phones don't block it); here the bug is marked 處理中 by 站長.
+    $('#im-station', sheet)?.addEventListener('click', () => {
+      const repo = stationRepo(it.product), owner = $('#im-owner').value.trim() || '站長';
+      const st = it.type === 'bug' ? 'doing' : it.status;
+      $('#im-st').value = st; $('#im-owner').value = owner;
+      W(() => serial('issues/' + id, () => db.doc('issues/' + id).update({ status: st, owner, station: { repo, at: Date.now() }, updatedAt: Date.now() })), '已交給站長，請在 GitHub 按「Submit new issue」');
+    });
   });
+}
+
+/* ================= 站長 (Claude on GitHub, see README) ================= */
+// The repo whose GitHub issues 站長 answers, per product. A product can name its own with a `repo` field.
+const STATION_REPO = { 'meow-work': 'sonia6891/meow-work-app', remindcat: 'sonia6891/RemindCat' };
+const stationRepo = pid => S.products.get(pid)?.repo || STATION_REPO[pid] || '';
+function stationIssueURL(it) {
+  const repo = stationRepo(it.product), p = S.products.get(it.product), s = it.sentry;
+  const cut = (t, n) => (t || '').length > n ? t.slice(0, n) + '…' : (t || '');
+  const lines = [
+    `@claude 請找出這個${it.type === 'bug' ? '問題的原因並修正' : '功能需求該怎麼做，並實作'}。`, '',
+    `- 產品：${p?.name || it.product}`, `- 優先級：${it.priority}`,
+    it.platform && `- 平台：${it.platform}`, it.version && `- 版本：${it.version}`,
+    s && `- Sentry：${s.short || ''} ${s.url || ''}（${fmtN(s.count)} 次、${fmtN(s.users)} 人、最後發生 ${new Date(s.lastSeen).toLocaleString('zh-TW')}）`,
+    s?.culprit && `- 發生位置：\`${s.culprit}\``, '',
+    !!it.desc && '### 描述\n' + cut(it.desc, 1500) + '\n',
+    `工作站編號 pws:${it.id}`
+  ].filter(l => typeof l === 'string');
+  return `https://github.com/${repo}/issues/new?title=${encodeURIComponent(cut(`[${it.priority}] ${it.title}`, 200))}&body=${encodeURIComponent(lines.join('\n'))}`;
+}
+function stationHTML(it) {
+  const repo = stationRepo(it.product);
+  if (!repo) return '';
+  const track = `https://github.com/${repo}/issues?q=${encodeURIComponent(`is:issue "pws:${it.id}"`)}`;
+  return `<div class="station"><div><b>站長</b><small>${it.station
+    ? `已交給站長・${ago(it.station.at)}　<a href="${esc(track)}" target="_blank" rel="noopener">在 GitHub 看進度 ↗</a>`
+    : '交給 Claude：找原因、開修正分支，在 GitHub 回報。不會動正式版。'}</small></div>
+    <a class="btn sm ${it.station ? '' : 'primary'}" id="im-station" href="${esc(stationIssueURL(it))}" target="_blank" rel="noopener">${it.station ? '再交一次' : '交給站長'}</a></div>`;
 }
 
 /* ================= view: products ================= */

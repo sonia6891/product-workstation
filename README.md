@@ -34,6 +34,16 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 
 需要 Supabase secret `SENTRY_AUTH_TOKEN`（Sentry → Settings → Auth Tokens，只勾 Read 權限）。沒有權杖時 Bug 追蹤頁會顯示「尚未啟用」。暫停同步：`select cron.unschedule('sentry-sync');`
 
+## 站長（交給 Claude 修）
+
+在 Bug 或功能需求的編輯視窗按 **交給站長**：手機或電腦會打開 GitHub 的新 issue，標題、Sentry 資料、描述都已填好，按「Submit new issue」送出。這筆會改成「處理中」、負責人「站長」。
+
+- 站長是 App 倉庫裡的 GitHub Actions（`.github/workflows/claude.yml`），看到 issue 或留言寫 `@claude` 就會開工：讀程式、找原因、把修正推到 `claude/…` 分支，在 issue 回報並附上開 PR 的連結。要它改方向，就在 issue 留言 `@claude …`。
+- 只推新分支，不動 main、不合併。iOS 程式在 GitHub 上無法編譯，要自己用 Xcode build 過再送審。
+- 用的是 Claude 訂閱（secret `CLAUDE_CODE_OAUTH_TOKEN`，在電腦上跑 `claude setup-token` 產生），不需要 API 金鑰，電腦不用開著。
+- 產品對應的倉庫寫在 `index.html` 的 `STATION_REPO`：喵的，又要上班了 → `sonia6891/meow-work-app`，提醒喵 → `sonia6891/RemindCat`。沒有對應倉庫的產品不會出現這個按鈕。
+- issue 內容最後有「工作站編號 pws:…」，工作站上的「在 GitHub 看進度」就是用它搜尋。
+
 ## 外觀
 
 預設是「喵風格」（跟《喵的，又要上班了》同一套紙卡＋縫線、深色時是胡桃木色）。到 **設定 → 外觀** 可以切回「經典」樣式，選擇只記在那台裝置上。圖表的市場／產品配色兩種樣式各有一套，都檢查過色盲也分得開。
