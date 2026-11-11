@@ -352,6 +352,7 @@ pre.code { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; f
     <nav class="nav" aria-label="主選單">
       <a href="#overview" data-v="overview"><svg viewBox="0 0 24 24"><path d="M4 20V13M10 20V8M16 20V4M2 20h20"/></svg>總覽</a>
       <a href="#data" data-v="data"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>數據輸入</a>
+      <a href="#churn" data-v="churn"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>退訂紀錄<em id="nb-churn"></em></a>
       <a href="#bugs" data-v="bugs"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="13" rx="5"/><path d="M12 7V4M7 13H3M21 13h-4M8 8 5.5 5.5M16 8l2.5-2.5M7.5 18 5 20.5M16.5 18l2.5 2.5"/></svg>Bug 追蹤<em id="nb-bugs"></em></a>
       <a href="#features" data-v="features"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.8 10.6c.6.6.8 1.3.8 2.4h6c0-1.1.2-1.8.8-2.4A6 6 0 0 0 12 3z"/></svg>功能需求<em id="nb-feat"></em></a>
       <a href="#products" data-v="products"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>產品</a>
@@ -419,6 +420,7 @@ const CURRENCIES = ['USD', 'TWD', 'JPY', 'CNY', 'HKD', 'EUR', 'KRW'];
 const VIEWS = {
   overview: ['總覽', '所有產品與市場的下載、訂閱、營收與廣告成效'],
   data: ['數據輸入', '每日記錄下載、訂閱、營收與各通路廣告花費，或貼上 CSV 批次匯入'],
+  churn: ['退訂紀錄', '誰關掉了自動續訂、到期或退款，以及他們付費多久後離開（App Store 通知，即時更新）'],
   bugs: ['Bug 追蹤', '依產品與優先級追蹤問題，從回報到驗證結案'],
   features: ['功能需求', '收集需求、累計提出次數，排出開發順序'],
   products: ['產品', '所有 App 與產品，隨時可以再加入新的'],
@@ -428,7 +430,7 @@ const isOpen = s => s !== 'done' && s !== 'wont';
 const SLOT = i => `var(--s${(i % 8) + 1})`;
 
 /* ================= state ================= */
-const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
+const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), subEvents: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
 const UI = { view: 'overview', product: 'all', market: 'all', range: '30', metric: 'dl', group: 'auto', f: { bug: { st: 'open', pri: 'all', q: '' }, feature: { st: 'open', pri: 'all', q: '' } } };
 try { const saved = JSON.parse(localStorage.getItem('pws-ui') || 'null'); if (saved) Object.assign(UI, saved, { f: Object.assign(UI.f, saved.f || {}) }); } catch (e) {}
 function saveUI() { try { localStorage.setItem('pws-ui', JSON.stringify({ product: UI.product, market: UI.market, range: UI.range, metric: UI.metric, group: UI.group, f: UI.f })); } catch (e) {} }
@@ -622,10 +624,11 @@ async function fetchAll(table) {
   return out;
 }
 async function loadAll() {
-  const [docs, rows] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics')]);
-  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.cfg = DEFAULT_CFG;
+  const [docs, rows, subs] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics'), fetchAll('sub_events').catch(() => [])]);
+  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.cfg = DEFAULT_CFG;
   docs.forEach(d => applyDoc(d.collection, d.id, d.data));
   rows.forEach(r => applyRow(r));
+  subs.forEach(r => S.subEvents.set(r.product_id + '/' + r.event_id, r));
   S.loadedAt = Date.now();
 }
 async function loadMembers() {
@@ -641,6 +644,7 @@ function subscribeLive() {
   sb.channel('workstation')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'docs' }, pl => { const r = pl.eventType === 'DELETE' ? pl.old : pl.new; if (r && r.collection) { applyDoc(r.collection, r.id, pl.eventType === 'DELETE' ? null : r.data); schedule(); } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_metrics' }, pl => { if (pl.eventType === 'DELETE') { if (pl.old && pl.old.date) applyRow(pl.old, true); } else applyRow(pl.new); schedule(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_events' }, pl => { const r = pl.eventType === 'DELETE' ? pl.old : pl.new; if (r && r.event_id) { const k = r.product_id + '/' + r.event_id; if (pl.eventType === 'DELETE') S.subEvents.delete(k); else S.subEvents.set(k, r); schedule(); } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => { const mine = await loadMembers(); if (!mine) { location.reload(); return; } built.view = null; schedule(); })
     .subscribe(st => { if (st === 'SUBSCRIBED') setSync('ok'); else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT') setSync('slow'); });
   // Phones pause background tabs; refresh when the page comes back.
@@ -936,7 +940,9 @@ function renderAll() {
   gm.innerHTML = `<option value="all">全部市場</option>` + S.cfg.markets.map(m => `<option value="${esc(m.code)}">${esc(m.name)}（${esc(m.code)}）</option>`).join('') + [...extra].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   gm.value = UI.market; if (gm.value !== UI.market) { UI.market = 'all'; gm.value = 'all'; }
   const showM = v === 'overview' || v === 'data';
-  $('#g-m-wrap').hidden = !showM; $('#g-r').hidden = v !== 'overview';
+  $('#g-m-wrap').hidden = !showM; $('#g-r').hidden = v !== 'overview' && v !== 'churn';
+  const weekCancels = [...S.subEvents.values()].filter(e => e.kind === 'cancel' && S.products.has(e.product_id) && Date.now() - new Date(e.event_at) < 7 * 864e5).length;
+  $('#nb-churn').textContent = weekCancels || '';
   $('#g-p').closest('.sel').hidden = v === 'settings' || v === 'products';
   $$('#g-r button').forEach(b => b.classList.toggle('on', b.dataset.r === UI.range));
   // view
@@ -944,6 +950,7 @@ function renderAll() {
   const rebuild = built.view !== v || (built.sig !== s && !(v === 'settings' && el.contains(document.activeElement)));
   if (v === 'overview') renderOverview(el);
   else if (v === 'products') renderProducts(el);
+  else if (v === 'churn') renderChurn(el);
   else if (v === 'data') { if (rebuild) buildData(el); updateData(); }
   else if (v === 'bugs' || v === 'features') { if (rebuild) buildIssues(el, v === 'bugs' ? 'bug' : 'feature'); updateIssues(v === 'bugs' ? 'bug' : 'feature'); }
   else if (v === 'settings') { if (rebuild) buildSettings(el); updateSettings(); }
@@ -1156,6 +1163,70 @@ function issueModal(type, id) {
 }
 
 /* ================= view: products ================= */
+/* ================= render: cancellations ================= */
+const SUBKIND = { cancel: ['關閉自動續訂', 'st-check'], resume: ['重新開啟續訂', 'st-done'], expire: ['到期失效', 'st-off'], refund: ['退款', 'st-active'], billing_fail: ['扣款失敗', 'st-active'] };
+const EXPIRE_WHY = { VOLUNTARY: '自己取消', BILLING_RETRY: '扣款失敗', PRICE_INCREASE: '不同意漲價', PRODUCT_NOT_FOR_SALE: '商品下架' };
+const planName = p => !p ? '—' : /year|annual/i.test(p) ? '年費' : /month/i.test(p) ? '月費' : /week/i.test(p) ? '週費' : p;
+const whenText = s => { const d = new Date(s); return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+function spanText(ms) {
+  if (ms == null || !isFinite(ms) || ms < 0) return '—';
+  const m = ms / 60000;
+  return m < 60 ? `${Math.max(1, Math.round(m))} 分鐘` : m < 48 * 60 ? `${Math.round(m / 60)} 小時` : `${Math.round(m / 1440)} 天`;
+}
+function moneyText(obj) {
+  const e = Object.entries(obj || {}).filter(([, v]) => +v > 0);
+  if (!e.length) return '—';
+  return e.map(([c, v]) => { try { const s = nf('m' + c, { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(+v); return c === 'TWD' ? s.replace(/^\$/, 'NT$') : s; } catch (x) { return `${c} ${v}`; } }).join(' + ');
+}
+function renderChurn(el) {
+  if (!S.ready) { el.innerHTML = loadingHTML(); return; }
+  const P = period();
+  const evs = [...S.subEvents.values()]
+    .filter(e => S.products.has(e.product_id) && (UI.product === 'all' || e.product_id === UI.product))
+    .filter(e => { const d = iso(new Date(e.event_at)); return d >= P.start && d <= P.end; })
+    .sort((a, b) => new Date(b.event_at) - new Date(a.event_at));
+  const by = k => evs.filter(e => e.kind === k);
+  const cancels = by('cancel');
+  const tile = (label, n, note) => `<div class="kpi"><div class="kl">${label}</div><div class="kv">${fmtVal(n, 'int')}</div><div class="kd"><span>${note}</span></div></div>`;
+  const trialN = cancels.filter(e => e.trial).length;
+  const tiles = tile('關閉自動續訂', cancels.length, trialN ? `其中 ${trialN} 位在試用期` : '這一期仍可用到期滿')
+    + tile('到期失效', by('expire').length, '方案到期、沒有續費')
+    + tile('退款', by('refund').length, '向 Apple 申請退款')
+    + tile('重新開啟續訂', by('resume').length, '關掉後又改回來');
+
+  const timed = cancels.filter(e => e.first_paid_at).map(e => new Date(e.event_at) - new Date(e.first_paid_at));
+  const B = [['1 小時內', 36e5], ['1 天內', 864e5], ['1 週內', 7 * 864e5], ['1 個月內', 30 * 864e5], ['更久', Infinity]];
+  const counts = B.map(([, lim], i) => timed.filter(ms => ms < lim && (i === 0 || ms >= B[i - 1][1])).length);
+  const cMax = Math.max(1, ...counts);
+  const sorted = [...timed].sort((a, b) => a - b), median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : null;
+  const dist = timed.length ? `<div class="bars">${B.map(([l], i) => `<div class="bar"><span class="lab">${l}</span><div class="trk"><div class="fil" style="width:${(counts[i] / cMax * 100).toFixed(1)}%"></div></div><span class="val">${counts[i]} 人<small>${(counts[i] / timed.length * 100).toFixed(0)}%</small></span></div>`).join('')}</div>`
+    + (timed.length < cancels.length ? `<p class="hint" style="margin-top:10px">另有 ${cancels.length - timed.length} 筆是較早的通知，沒有付費時間。</p>` : '')
+    : '<p class="hint">這段期間沒有人關閉自動續訂。</p>';
+
+  const showP = UI.product === 'all';
+  const rows = evs.slice(0, 300).map(e => {
+    const k = SUBKIND[e.kind] || [e.kind, 'st-open'];
+    const why = e.kind === 'expire' && EXPIRE_WHY[e.subtype] ? `<span class="hint">（${EXPIRE_WHY[e.subtype]}）</span>` : '';
+    const span = e.first_paid_at ? new Date(e.event_at) - new Date(e.first_paid_at) : null;
+    return `<tr><td class="mono">${whenText(e.event_at)}</td>${showP ? `<td><i class="dot" style="background:${pColor(e.product_id)}"></i> ${esc(pName(e.product_id))}</td>` : ''}
+      <td><span class="pill ${k[1]}">${k[0]}</span>${why}</td>
+      <td>${esc(planName(e.plan))}${e.trial ? '<span class="sample-tag">試用期</span>' : ''}</td>
+      <td class="mono">${e.first_paid_at ? whenText(e.first_paid_at) : '—'}</td><td class="n">${spanText(span)}</td>
+      <td class="n">${moneyText(e.paid_total)}</td><td>${e.market && e.market !== 'OTHER' ? esc(mName(e.market)) : '—'}</td><td class="mono hint">${esc(e.account || '—')}</td></tr>`;
+  }).join('');
+  const table = evs.length ? `<div class="tw"><table class="t"><thead><tr><th>時間</th>${showP ? '<th>產品</th>' : ''}<th>事件</th><th>方案</th><th>第一次付費</th><th class="n">付費多久後</th><th class="n">已付金額</th><th>市場</th><th>帳號</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : '<p class="hint">這段期間沒有退訂、到期或退款。</p>';
+
+  el.innerHTML = `<div class="grid12">
+    <div class="kpis span12">${tiles}</div>
+    <section class="card span5"><header><h3>付費多久後關閉續訂<small>${median != null ? '中位數 ' + spanText(median) : ''}</small></h3></header>${dist}</section>
+    <section class="card span7"><header><h3>怎麼看這些數字</h3></header>
+      <p class="hint" style="margin:0 0 8px">「關閉自動續訂」不是退款：這一期的錢已經付了，Pro 會用到期滿，到期那天才會再出現一筆「到期失效」。退款是用戶另外向 Apple 申請的。</p>
+      <p class="hint" style="margin:0">「帳號」是 App 內部帳號的代碼，同一個代碼就是同一個人；Apple 不提供姓名或 Email。已付金額是用戶付的價錢，未扣 Apple 抽成。</p></section>
+    <section class="card span12"><header><h3>明細<small>${evs.length} 筆${evs.length > 300 ? '・顯示最近 300 筆' : ''}</small></h3></header>${table}</section>
+  </div>`;
+}
+
 function renderProducts(el) {
   if (!S.ready) { el.innerHTML = loadingHTML(); return; }
   if (!S.products.size) { el.innerHTML = onboardingHTML(); return; }

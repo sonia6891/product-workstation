@@ -19,7 +19,7 @@ revoke all on workstation.config from public, anon, authenticated;
 
 create or replace function workstation.push(p_days int) returns int
 language plpgsql security definer set search_path = '' as $fn$
-declare c workstation.config; v_to date; v_from date; v_body jsonb; r extensions.http_response;
+declare c workstation.config; v_to date; v_from date; v_body jsonb; r extensions.http_response; v_events jsonb;
 begin
   select * into c from workstation.config where id = 1;
   v_to := (now() at time zone 'Asia/Taipei')::date; v_from := v_to - (p_days - 1);
@@ -28,6 +28,15 @@ begin
   r := extensions.http(('POST', c.url || '/rest/v1/rpc/ingest_metrics',
         array[extensions.http_header('apikey', c.anon_key), extensions.http_header('Authorization', 'Bearer ' || c.anon_key)],
         'application/json', v_body::text)::extensions.http_request);
+  -- Subscription lifecycle events (cancel / expire / refund ...), when this app exports them.
+  if to_regprocedure('workstation.export_events(timestamptz)') is not null then
+    execute 'select workstation.export_events($1)' into v_events using now() - make_interval(days => p_days);
+    if jsonb_array_length(v_events) > 0 then
+      perform extensions.http(('POST', c.url || '/rest/v1/rpc/ingest_events',
+        array[extensions.http_header('apikey', c.anon_key), extensions.http_header('Authorization', 'Bearer ' || c.anon_key)],
+        'application/json', jsonb_build_object('p_key', c.ingest_key, 'p_product', c.product_id, 'p_events', v_events)::text)::extensions.http_request);
+    end if;
+  end if;
   update workstation.config set last_status = r.status, last_body = left(r.content, 500), last_at = now() where id = 1;
   return r.status;
 end $fn$;

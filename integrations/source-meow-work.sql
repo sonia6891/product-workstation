@@ -77,3 +77,57 @@ select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
 from keys k
 $fn$;
 revoke execute on function workstation.export_rows(date, date) from public, anon, authenticated;
+
+-- Cancellation feed for the 退訂紀錄 page: renewal turned off/on, expiry, refund, billing failure.
+-- first_paid = the subscription's original purchase; paid = what this subscription has paid so far;
+-- account = first 6 hex of md5(app user id), enough to spot the same person, not who they are.
+create or replace function workstation.export_events(p_since timestamptz) returns jsonb
+language sql stable set search_path = '' as $fn$
+with
+all_ev as (
+  select e.*, case when jsonb_typeof(e.raw->'transaction') = 'object' then e.raw->'transaction' else e.raw end t
+  from public.store_subscription_events e where e.environment = 'Production'
+),
+tx as (
+  select distinct on (t->>'transactionId')
+    t->>'transactionId' tid, coalesce(t->>'originalTransactionId', original_transaction_id) otid,
+    to_timestamp((t->>'purchaseDate')::numeric / 1000) pd,
+    to_timestamp(nullif(t->>'originalPurchaseDate', '')::numeric / 1000) opd,
+    coalesce(nullif(t->>'price', '')::numeric, 0) / 1000 price, t->>'currency' cur, t->>'storefront' sf,
+    t->>'offerType' = '1' and coalesce(nullif(t->>'price', '')::numeric, 0) = 0 trial,
+    t ? 'revocationDate' revoked
+  from all_ev where t ? 'transactionId' and t ? 'purchaseDate'
+  order by t->>'transactionId', created_at
+),
+users as (
+  select distinct on (coalesce(t->>'originalTransactionId', original_transaction_id)) coalesce(t->>'originalTransactionId', original_transaction_id) otid, user_id
+  from all_ev where user_id is not null order by 1, created_at
+),
+ev as (
+  select e.event_id, e.event_type, e.subtype, e.created_at at_, e.product_id,
+    coalesce(e.original_transaction_id, e.t->>'originalTransactionId') otid, e.user_id
+  from all_ev e
+  where e.created_at >= p_since
+    and (e.event_type in ('EXPIRED', 'REFUND', 'REVOKE', 'DID_FAIL_TO_RENEW', 'GRACE_PERIOD_EXPIRED')
+      or (e.event_type = 'DID_CHANGE_RENEWAL_STATUS' and e.subtype in ('AUTO_RENEW_DISABLED', 'AUTO_RENEW_ENABLED')))
+)
+select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+  'id', ev.event_id,
+  'kind', case
+    when ev.event_type = 'DID_CHANGE_RENEWAL_STATUS' and ev.subtype = 'AUTO_RENEW_DISABLED' then 'cancel'
+    when ev.event_type = 'DID_CHANGE_RENEWAL_STATUS' then 'resume'
+    when ev.event_type in ('REFUND', 'REVOKE') then 'refund'
+    when ev.event_type = 'DID_FAIL_TO_RENEW' then 'billing_fail'
+    else 'expire' end,
+  'subtype', ev.subtype,
+  'at', ev.at_,
+  'plan', ev.product_id,
+  'first_paid', (select coalesce(min(x.opd), min(x.pd)) from tx x where x.otid = ev.otid),
+  'trial', (select x.trial from tx x where x.otid = ev.otid and x.pd <= ev.at_ order by x.pd desc limit 1),
+  'paid', (select jsonb_object_agg(z.cur, z.amt) from (select x.cur, sum(x.price) amt from tx x where x.otid = ev.otid and x.price > 0 and not x.revoked and x.pd <= ev.at_ and x.cur is not null group by 1) z),
+  'm', (select x.sf from tx x where x.otid = ev.otid order by x.pd desc limit 1),
+  'account', upper(left(md5(coalesce(ev.user_id, (select u.user_id from users u where u.otid = ev.otid))::text), 6))
+)) order by ev.at_), '[]'::jsonb)
+from ev
+$fn$;
+revoke execute on function workstation.export_events(timestamptz) from public, anon, authenticated;
