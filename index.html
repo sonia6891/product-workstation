@@ -366,8 +366,44 @@ pre.code { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; f
   .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .g3 { grid-template-columns: minmax(0, 1fr); }
 }
+.nav-more, .more-menu { display: none; }
+@media (max-width: 860px) {
+  .side { padding-block: 8px; gap: 10px; overflow: visible; }
+  .brand > div { display: block !important; }
+  .brand b { font-size: 15px; }
+  .nav { position: fixed; z-index: 40; left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 6px; background: var(--panel); border: 1.25px solid var(--card-line); border-radius: 22px; box-shadow: var(--shadow-float); }
+  .nav::before { content: ""; position: absolute; inset: 3.75px; border: 1px dashed var(--stitch); border-radius: 18px; pointer-events: none; }
+  .nav a, .nav-more { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 52px; padding: 0 2px; border-radius: 16px; font-size: 0; color: var(--ink-2); }
+  .nav a.nav-x { display: none; }
+  .nav-more { border: 0; background: none; cursor: pointer; font: inherit; font-size: 0; }
+  .nav a svg, .nav-more svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .nav-more svg { fill: currentColor; stroke: none; }
+  .nav a::before, .nav-more::before { content: attr(data-s); order: 2; font-size: 11.5px; font-weight: 700; line-height: 1; }
+  .nav a em { position: absolute; top: 4px; right: calc(50% - 22px); margin: 0; min-width: 18px; text-align: center; padding: 0 5px; font-size: 10.5px; line-height: 16px; background: var(--critical); color: #fff7ec; }
+  .nav-more.on { color: var(--title); background: var(--accent-soft); }
+  .more-menu { position: fixed; z-index: 41; right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); display: flex; flex-direction: column; gap: 2px; min-width: 190px; padding: 8px; background: var(--panel); border: 1.25px solid var(--card-line); border-radius: 18px; box-shadow: var(--shadow-float); }
+  .more-menu[hidden] { display: none; }
+  .more-menu a { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 12px; color: var(--ink); text-decoration: none; font-weight: 600; }
+  .more-menu a svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .more-menu a.on, .more-menu a:active { background: var(--accent-soft); }
+  main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
+  .toast { bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); }
+  .top { gap: 12px; align-items: stretch; }
+  .top > div:first-child { min-width: 0; }
+  .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; width: 100%; }
+  .filters .sel { min-width: 0; }
+  .filters .sel select { max-width: none; width: 100%; min-width: 0; }
+  .filters .seg { grid-column: 1 / -1; display: flex; }
+  .filters .seg button { flex: 1; padding-inline: 4px; }
+}
 @media (max-width: 520px) {
   .kv { font-size: 20px; }
+  .top h1 { font-size: 21px; }
+  .card > header { margin-bottom: 10px; }
+  table.t { font-size: 12.5px; }
+  table.t th, table.t td { padding: 7px 6px; }
+  table.t .lg { display: none; }
   .g2 { grid-template-columns: minmax(0, 1fr); }
   .irow { grid-template-columns: 4px 40px minmax(0, 1fr) auto; }
   .irow .vote, .irow > span:empty:not(.stripe) { display: none; }
@@ -457,14 +493,20 @@ pre.code { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; f
   <aside class="side">
     <div class="brand"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:11px"></i><i style="height:15px"></i></span><div><b>產品工作站</b><small id="sync">連線中…</small></div></div>
     <nav class="nav" aria-label="主選單">
-      <a href="#overview" data-v="overview"><svg viewBox="0 0 24 24"><path d="M4 20V13M10 20V8M16 20V4M2 20h20"/></svg>總覽</a>
-      <a href="#data" data-v="data"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>數據輸入</a>
-      <a href="#churn" data-v="churn"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>退訂紀錄<em id="nb-churn"></em></a>
-      <a href="#bugs" data-v="bugs"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="13" rx="5"/><path d="M12 7V4M7 13H3M21 13h-4M8 8 5.5 5.5M16 8l2.5-2.5M7.5 18 5 20.5M16.5 18l2.5 2.5"/></svg>Bug 追蹤<em id="nb-bugs"></em></a>
-      <a href="#features" data-v="features"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.8 10.6c.6.6.8 1.3.8 2.4h6c0-1.1.2-1.8.8-2.4A6 6 0 0 0 12 3z"/></svg>功能需求<em id="nb-feat"></em></a>
-      <a href="#products" data-v="products"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>產品</a>
-      <a href="#settings" data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>設定</a>
+      <a href="#overview" data-v="overview" data-s="總覽"><svg viewBox="0 0 24 24"><path d="M4 20V13M10 20V8M16 20V4M2 20h20"/></svg>總覽</a>
+      <a href="#data" data-v="data" data-s="數據" class="nav-x"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>數據輸入</a>
+      <a href="#churn" data-v="churn" data-s="退訂"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>退訂紀錄<em id="nb-churn"></em></a>
+      <a href="#bugs" data-v="bugs" data-s="Bug"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="13" rx="5"/><path d="M12 7V4M7 13H3M21 13h-4M8 8 5.5 5.5M16 8l2.5-2.5M7.5 18 5 20.5M16.5 18l2.5 2.5"/></svg>Bug 追蹤<em id="nb-bugs"></em></a>
+      <a href="#features" data-v="features" data-s="需求"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.8 10.6c.6.6.8 1.3.8 2.4h6c0-1.1.2-1.8.8-2.4A6 6 0 0 0 12 3z"/></svg>功能需求<em id="nb-feat"></em></a>
+      <a href="#products" data-v="products" data-s="產品" class="nav-x"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>產品</a>
+      <a href="#settings" data-v="settings" data-s="設定" class="nav-x"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>設定</a>
+      <button type="button" class="nav-more" data-act="more" data-s="更多" aria-haspopup="true" aria-expanded="false" aria-controls="more-menu"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>更多</button>
     </nav>
+    <div class="more-menu" id="more-menu" hidden>
+      <a href="#data" data-v="data"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>數據輸入</a>
+      <a href="#products" data-v="products"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>產品</a>
+      <a href="#settings" data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>設定與登出</a>
+    </div>
     <div class="roster">
       <div class="rh">產品</div>
       <div id="roster"></div>
@@ -1029,7 +1071,9 @@ function renderAll() {
   const v = UI.view;
   if (UI.product !== 'all' && S.ready && !S.products.has(UI.product)) UI.product = 'all';
   // nav
-  $$('.nav a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
+  $$('.nav a, .more-menu a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
+  $('.nav-more').classList.toggle('on', ['data', 'products', 'settings'].includes(v));
+  moreMenu(false);
   const openBugs = [...S.issues.values()].filter(i => i.type === 'bug' && isOpen(i.status) && S.products.has(i.product)).length;
   const openFeat = [...S.issues.values()].filter(i => i.type === 'feature' && isOpen(i.status) && S.products.has(i.product)).length;
   $('#nb-bugs').textContent = openBugs || ''; $('#nb-feat').textContent = openFeat || '';
@@ -1292,14 +1336,14 @@ function subsNowHTML() {
   const sum = (plan, k) => snaps.reduce((a, s) => a + (+(s.plans?.[plan]?.[k]) || 0), 0);
   const newOf = plan => snaps.reduce((a, s) => a + (+(s.month_new_plans?.[plan]) || 0), 0);
   const tot = k => PL.reduce((a, [p]) => a + sum(p, k), 0);
-  const total = { active: tot('active'), renewing: tot('renewing'), off: tot('off'), trial: tot('trial') };
+  const total = { active: tot('active'), renewing: tot('renewing'), off: tot('off'), trial: tot('trial') }, trial = total.trial > 0;
   const rows = PL.filter(([p]) => sum(p, 'active') || newOf(p)).map(([p, l]) =>
-    `<tr><td>${l}</td><td class="n">${fmtVal(sum(p, 'active'), 'int')}</td><td class="n">${fmtVal(sum(p, 'renewing'), 'int')}</td><td class="n">${fmtVal(sum(p, 'off'), 'int')}</td><td class="n">${fmtVal(sum(p, 'trial'), 'int')}</td><td class="n">${fmtVal(newOf(p), 'int')}</td></tr>`).join('');
+    `<tr><td>${l}</td><td class="n">${fmtVal(sum(p, 'active'), 'int')}</td><td class="n">${fmtVal(sum(p, 'renewing'), 'int')}</td><td class="n">${fmtVal(sum(p, 'off'), 'int')}</td>${trial ? `<td class="n">${fmtVal(sum(p, 'trial'), 'int')}</td>` : ''}<td class="n">${fmtVal(newOf(p), 'int')}</td></tr>`).join('');
   const monthNew = snaps.reduce((a, s) => a + (+s.month_new || 0), 0), monthOff = snaps.reduce((a, s) => a + (+s.month_off || 0), 0), monthExp = snaps.reduce((a, s) => a + (+s.month_expired || 0), 0);
   const mo = +TODAY.slice(5, 7);
   return `<section class="card span12"><header><h3>訂閱現況<small>此刻的有效訂閱・依 App Store 通知即時更新</small></h3><button class="btn sm" data-act="go" data-id="churn">退訂紀錄</button></header>
-    <div class="tw"><table class="t"><thead><tr><th>方案</th><th class="n">有效訂閱</th><th class="n">會自動續訂</th><th class="n">已關閉續訂</th><th class="n">試用中</th><th class="n">${mo} 月新訂閱</th></tr></thead>
-    <tbody>${rows}<tr><td><b>合計</b></td><td class="n"><b>${fmtVal(total.active, 'int')}</b></td><td class="n"><b>${fmtVal(total.renewing, 'int')}</b></td><td class="n"><b>${fmtVal(total.off, 'int')}</b></td><td class="n"><b>${fmtVal(total.trial, 'int')}</b></td><td class="n"><b>${fmtVal(monthNew, 'int')}</b></td></tr></tbody></table></div>
+    <div class="tw"><table class="t"><thead><tr><th>方案</th><th class="n">有效<span class="lg">訂閱</span></th><th class="n">會<span class="lg">自動</span>續訂</th><th class="n">已關閉<span class="lg">續訂</span></th>${trial ? '<th class="n">試用中</th>' : ''}<th class="n">${mo} 月新<span class="lg">訂閱</span></th></tr></thead>
+    <tbody>${rows}<tr><td><b>合計</b></td><td class="n"><b>${fmtVal(total.active, 'int')}</b></td><td class="n"><b>${fmtVal(total.renewing, 'int')}</b></td><td class="n"><b>${fmtVal(total.off, 'int')}</b></td>${trial ? `<td class="n"><b>${fmtVal(total.trial, 'int')}</b></td>` : ''}<td class="n"><b>${fmtVal(monthNew, 'int')}</b></td></tr></tbody></table></div>
     <p class="hint" style="margin:10px 0 0">「已關閉續訂」的人這一期已付費、到期前仍可使用，但到期後不會再扣款。${mo} 月至今：新訂閱 ${monthNew}・關閉續訂 ${monthOff}・到期失效 ${monthExp}。</p></section>`;
 }
 
@@ -1794,6 +1838,12 @@ function armDelete(btn, action, armedText = '再按一次確認刪除') {
 function go(view) { if (location.hash !== '#' + view) location.hash = view; else route(); }
 function route() { const v = (location.hash || '').slice(1); UI.view = VIEWS[v] ? v : 'overview'; built.view = null; renderAll(); window.scrollTo(0, 0); }
 window.addEventListener('hashchange', route);
+function moreMenu(open) {
+  const m = $('#more-menu'), b = $('.nav-more'); if (!m || !b) return;
+  m.hidden = !open; b.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+document.addEventListener('click', e => { if (!e.target.closest('#more-menu, .nav-more')) moreMenu(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') moreMenu(false); });
 $('#g-p').addEventListener('change', e => { UI.product = e.target.value; saveUI(); built.view = UI.view === 'data' ? null : built.view; renderAll(); });
 $('#g-m').addEventListener('change', e => { UI.market = e.target.value; saveUI(); built.view = UI.view === 'data' ? null : built.view; renderAll(); });
 $('#g-r').addEventListener('click', e => { const b = e.target.closest('button[data-r]'); if (!b) return; UI.range = b.dataset.r; saveUI(); renderAll(); });
@@ -1822,6 +1872,7 @@ document.addEventListener('click', async e => {
     case 'go': go(id); break;
     case 'gobugs': UI.f.bug.pri = el.dataset.pri; UI.f.bug.st = 'open'; saveUI(); go('bugs'); break;
     case 'skin': setSkin(id); break;
+    case 'more': moreMenu($('#more-menu').hidden); break;
     case 'pickproduct': UI.product = UI.product === id && UI.view === 'overview' ? 'all' : id; saveUI(); if (UI.view !== 'overview' && UI.view !== 'bugs' && UI.view !== 'features') go('overview'); else { built.view = null; renderAll(); } break;
     case 'viewproduct': UI.product = id; saveUI(); go('overview'); break;
     case 'pickmarket': UI.market = UI.market === id ? 'all' : id; saveUI(); renderAll(); break;
