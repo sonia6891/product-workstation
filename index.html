@@ -690,7 +690,7 @@ function showAuth(mode, msg, isErr) {
 }
 function authErr(e) {
   const m = (e && e.message) || '';
-  if (/invalid login credentials/i.test(m)) return 'Email 或密碼不正確。';
+  if (/invalid login credentials/i.test(m)) return 'Email 或密碼不正確。如果還沒建立過帳號，請先點下面的「管理員第一次使用」設定密碼。';
   if (/email not confirmed/i.test(m)) return '這個帳號還沒完成 Email 驗證，請先點確認信裡的連結。';
   if (/already registered|already exists/i.test(m)) return '這個 Email 已經註冊過了，請直接登入。';
   if (/password.*(at least|short|weak)/i.test(m)) return '密碼太短或太簡單，請至少 8 個字元。';
