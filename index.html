@@ -611,6 +611,7 @@ async function loadMembers() {
   return mine || null;
 }
 function subscribeLive() {
+  if (S.live) return; S.live = true;
   sb.channel('workstation')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'docs' }, pl => { const r = pl.eventType === 'DELETE' ? pl.old : pl.new; if (r && r.collection) { applyDoc(r.collection, r.id, pl.eventType === 'DELETE' ? null : r.data); schedule(); } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_metrics' }, pl => { if (pl.eventType === 'DELETE') { if (pl.old && pl.old.date) applyRow(pl.old, true); } else applyRow(pl.new); schedule(); })
@@ -625,8 +626,8 @@ function subscribeLive() {
 /* ----- sign-in ----- */
 let authMode = 'signin';
 const AUTH_TEXT = {
-  signin: ['登入', '用團隊白名單裡的 Email 登入。', '登入'],
-  signup: ['註冊帳號', '請用已經被管理員加入白名單的 Email 註冊，密碼至少 8 個字元。', '註冊'],
+  signin: ['登入', '帳號由管理員建立。請用管理員給你的 Email 和密碼登入。', '登入'],
+  signup: ['註冊帳號', '一般成員不需要註冊，請直接用管理員給你的帳號登入。這裡只供管理員第一次建立帳號使用。', '註冊'],
   reset: ['重設密碼', '輸入 Email，我們會寄一封重設密碼的信給你。', '寄出重設信'],
   newpw: ['設定新密碼', '請輸入新的密碼（至少 8 個字元）。', '儲存新密碼'],
   sent: ['請收信', '', ''],
@@ -646,7 +647,7 @@ function showAuth(mode, msg, isErr) {
   $('#af-go').hidden = !btn; $('#af-go').textContent = btn || ''; $('#af-go').disabled = false;
   const m = $('#af-msg'); m.textContent = mode === 'sent' ? '' : (msg || ''); m.className = 'auth-msg' + (isErr ? ' err' : '');
   const links = {
-    signin: [['signup', '註冊新帳號'], ['reset', '忘記密碼']],
+    signin: [['reset', '忘記密碼'], ['signup', '管理員第一次使用']],
     signup: [['signin', '已經有帳號？登入']],
     reset: [['signin', '回到登入']],
     sent: [['signin', '回到登入']],
@@ -1437,16 +1438,21 @@ function buildSettings(el) {
     </section>
     <section class="card span6"><header><h3>團隊成員<small>只有名單裡的 Email 能登入看到資料</small></h3></header>
       <div id="mem-list"></div>
-      ${isOwner ? `<form id="mf" class="frow" style="margin-top:12px">
-        <input class="inp" id="mf-email" type="email" placeholder="成員的 Email" style="flex:1;min-width:180px" aria-label="成員 Email">
-        <select class="inp" id="mf-role" style="width:auto" aria-label="權限">${ROLES.map(([k, l]) => `<option value="${k}" ${k === 'editor' ? 'selected' : ''}>${l}</option>`).join('')}</select>
-        <button class="btn primary" type="submit">加入</button>
+      ${isOwner ? `<h4>建立成員帳號</h4><form id="mf" class="g2" style="align-items:end">
+        <label class="fld"><span>Email</span><input id="mf-email" type="email" autocomplete="off" placeholder="成員的 Email"></label>
+        <label class="fld"><span>初始密碼（至少 8 字元）</span><input id="mf-pw" type="text" autocomplete="off" placeholder="例如：Team2026!"></label>
+        <label class="fld"><span>權限</span><select id="mf-role">${ROLES.map(([k, l]) => `<option value="${k}" ${k === 'editor' ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <div><button class="btn primary" type="submit" id="mf-go">建立帳號</button></div>
       </form>
-      <p class="hint" style="margin-top:10px">加入後請對方打開這個網站，按「註冊新帳號」用同一個 Email 註冊、完成信箱驗證就能登入。<br>擁有者：管理成員與所有資料・編輯者：新增修改資料・檢視者：只能看。</p>` : '<p class="hint" style="margin-top:10px">只有擁有者可以新增或移除成員。</p>'}
+      <p class="hint" style="margin-top:10px">建立後，把網址、Email 和初始密碼告訴對方，對方就能直接登入，登入後可在「設定 → 我的帳號」改密碼。成員忘記密碼時，用同一個 Email 再建立一次並輸入新密碼即可重設。<br>擁有者：管理成員與所有資料・編輯者：新增修改資料・檢視者：只能看。</p>` : '<p class="hint" style="margin-top:10px">只有擁有者可以新增或移除成員。</p>'}
     </section>
     <section class="card span6"><header><h3>我的帳號</h3></header>
       <p style="margin:0">目前登入：<b>${esc(me)}</b>（${esc((ROLES.find(r => r[0] === (members.find(x => x.email === me) || {}).role) || ['', '—'])[1])}）</p>
-      <div class="frow"><button class="btn" type="button" data-auth="signout">登出</button></div>
+      <form id="pwf" class="frow">
+        <input class="inp" id="pwf-pw" type="password" autocomplete="new-password" placeholder="新密碼（至少 8 字元）" style="flex:1;min-width:180px" aria-label="新密碼">
+        <button class="btn" type="submit">修改密碼</button>
+      </form>
+      <div class="frow"><button class="btn ghost" type="button" data-auth="signout">登出</button></div>
     </section>
     <section class="card span6" id="sample-card" hidden><header><h3>範例資料</h3></header>
       <p class="hint">工作站附了兩個標示「範例」的產品和一些假數據，讓你先看看畫面。開始放入真實資料後，可以一鍵清除。</p>
@@ -1456,11 +1462,29 @@ function buildSettings(el) {
   if (ro) $$('#sf input, #sf select').forEach(e => e.disabled = true);
   $('#mf')?.addEventListener('submit', async e => {
     e.preventDefault();
-    const email = $('#mf-email').value.trim().toLowerCase(), role = $('#mf-role').value;
+    const email = $('#mf-email').value.trim().toLowerCase(), role = $('#mf-role').value, password = $('#mf-pw').value;
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('請輸入正確的 Email', 'err'); return; }
-    if (members.some(x => x.email === email)) { toast('這個 Email 已經在名單裡了', 'err'); return; }
-    const ok = await W(() => q(sb.from('members').insert({ email, role })), `已加入 ${email}`);
-    if (ok) { $('#mf-email').value = ''; await loadMembers(); updateSettings(); }
+    if (password.length < 8) { toast('初始密碼至少要 8 個字元', 'err'); return; }
+    if (email === me && role !== 'owner') { toast('不能把自己改成非擁有者', 'err'); return; }
+    const btn = $('#mf-go'); btn.disabled = true;
+    try {
+      const { data, error } = await sb.functions.invoke('create-member-account', { body: { email, password, role } });
+      if (error) {
+        let code = ''; try { code = (await error.context.json()).error; } catch (x) {}
+        throw new Error({ not_owner: '只有擁有者可以建立帳號', weak_password: '密碼至少 8 個字元', bad_email: 'Email 格式不正確', cannot_demote_self: '不能把自己改成非擁有者' }[code] || code || error.message);
+      }
+      toast(data && data.created ? `已建立 ${email} 的帳號` : `${email} 已有帳號，已更新密碼與權限`);
+      $('#mf-email').value = ''; $('#mf-pw').value = '';
+      await loadMembers(); updateSettings();
+    } catch (err) { toast('建立失敗：' + err.message, 'err'); }
+    finally { btn.disabled = false; }
+  });
+  $('#pwf').addEventListener('submit', async e => {
+    e.preventDefault();
+    const pw = $('#pwf-pw').value;
+    if (pw.length < 8) { toast('密碼至少要 8 個字元', 'err'); return; }
+    const { error } = await sb.auth.updateUser({ password: pw });
+    if (error) toast(authErr(error), 'err'); else { $('#pwf-pw').value = ''; toast('密碼已更新'); }
   });
   $('#sf').addEventListener('submit', async e => {
     e.preventDefault();
