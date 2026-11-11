@@ -14,6 +14,36 @@ const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { 'Conte
 const row = (id: string, data: unknown, collection = 'issues') =>
   ({ collection, id, data, updated_at: new Date().toISOString(), updated_by: 'sentry' });
 
+// Where the latest event got stuck, so a fix can start from the code (the workstation shows it, and 交給站長 sends it):
+// the innermost frames of the exception, else of the crashed or main thread. ★ marks the app's own code.
+// Fetched only for a new issue or one that happened again, so a run costs at most a few extra calls.
+const TRACE_LIMIT = 10;
+async function latestTrace(s: typeof SOURCES[number], issueId: string, token: string) {
+  const r = await fetch(`https://${s.host}/api/0/organizations/${s.org}/issues/${issueId}/events/latest/`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return null;
+  const ev = await r.json();
+  const entries: any[] = ev.entries || [];
+  const exc = entries.find(e => e.type === 'exception')?.data?.values || [];
+  const threads = entries.find(e => e.type === 'threads')?.data?.values || [];
+  const stack = [...exc].reverse().find((v: any) => v.stacktrace?.frames?.length)?.stacktrace
+    || threads.find((t: any) => t.crashed && t.stacktrace?.frames?.length)?.stacktrace
+    || threads.find((t: any) => t.current && t.stacktrace?.frames?.length)?.stacktrace
+    || threads.find((t: any) => t.stacktrace?.frames?.length)?.stacktrace;
+  const base = (x: string) => String(x || '').split(/[\\/]/).pop();
+  const frames = [...(stack?.frames || [])].reverse().slice(0, 40).map((f: any) => {
+    const where = f.filename || f.absPath ? `${base(f.filename || f.absPath)}${f.lineNo ? ':' + f.lineNo : ''}${f.colNo ? ':' + f.colNo : ''}` : '';
+    return `${f.inApp ? '★ ' : ''}${base(f.package) ? base(f.package) + ' ' : ''}${f.function || f.instructionAddr || '?'}${where ? ' (' + where + ')' : ''}`.slice(0, 200);
+  });
+  const tag = (k: string) => (ev.tags || []).find((t: any) => t.key === k)?.value || '';
+  // What happened just before (page changes, requests, the App going to the background): the last 12, oldest first.
+  const crumbs = (entries.find(e => e.type === 'breadcrumbs')?.data?.values || []).slice(-12).map((b: any) => {
+    const d = b.data || {}, what = b.message || d.state || [d.method, d.url, d.status_code].filter(Boolean).join(' ') || d.to || '';
+    return `${String(b.timestamp || '').slice(11, 19)} ${b.category || b.type || ''} ${what}`.trim().slice(0, 160);
+  });
+  return { at: Date.parse(ev.dateCreated) || Date.now(), trace: frames, crumbs, release: tag('release'), os: tag('os'), device: tag('device'),
+    message: String(exc[exc.length - 1]?.value || ev.message || '').slice(0, 500) };
+}
+
 function priority(i: { level: string; userCount: number }) {
   if (i.level === 'fatal') return 'P0';
   if (i.level === 'error') return i.userCount >= 20 ? 'P1' : 'P2';
@@ -36,11 +66,21 @@ Deno.serve(async () => {
       if (error) throw error;
       const ex = new Map((existing || []).map(d => [d.id, d.data]));
       const seen = new Set<string>(), rows = [];
+      let traced = 0;
       for (const i of issues) {
         const id = `sentry-${s.product}-${i.id}`; seen.add(id);
         const old = ex.get(id);
-        const sentry = { id: i.id, short: i.shortId, url: i.permalink, level: i.level, count: Number(i.count) || 0, users: i.userCount || 0,
+        const sentry: Record<string, any> = { id: i.id, short: i.shortId, url: i.permalink, level: i.level, count: Number(i.count) || 0, users: i.userCount || 0,
           firstSeen: Date.parse(i.firstSeen), lastSeen: Date.parse(i.lastSeen), culprit: i.culprit || '' };
+        // The latest event's stack: kept from before unless the issue happened again since it was read.
+        const prevEvent = old?.sentry?.event;
+        if (prevEvent && prevEvent.seen === sentry.lastSeen && prevEvent.crumbs) sentry.event = prevEvent;
+        else if (traced < TRACE_LIMIT) {
+          traced++;
+          const e = await latestTrace(s, i.id, token!).catch(() => null);
+          if (e) sentry.event = { ...e, seen: sentry.lastSeen };
+          else if (prevEvent) sentry.event = prevEvent;
+        } else if (prevEvent) sentry.event = prevEvent;
         if (!old) {
           rows.push(row(id, { type: 'bug', title: i.title, product: s.product, priority: priority(i), status: 'new', platform: '', version: '', owner: '',
             desc: `${sentry.culprit}\n\n來源：Sentry ${sentry.short}`.trim(), createdAt: sentry.firstSeen, updatedAt: sentry.lastSeen, sentry }));

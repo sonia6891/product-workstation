@@ -189,6 +189,10 @@ main { min-width: 0; padding-block: 22px 60px; padding-left: 28px; padding-right
 .station small { color: var(--muted); font-size: 12.5px; }
 .station .btn { flex: none; text-decoration: none; display: inline-flex; align-items: center; }
 .station-wrap { display: flex; flex-direction: column; gap: 8px; }
+.sevent { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--panel-2); font-size: 13px; }
+.sevent summary { cursor: pointer; font-weight: 600; } .sevent summary small { font-weight: 400; color: var(--muted); margin-left: 8px; }
+.sevent p { margin: 8px 0 4px; } .sevent b { display: block; margin-top: 8px; font-size: 12px; color: var(--ink-2); }
+.sevent pre { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11.5px; line-height: 1.5; max-height: 220px; overflow: auto; }
 .stn-stage { font-weight: 600; color: var(--ink-2); }
 .stn-stage.busy, .src-tag.stn.busy { color: var(--accent); } .stn-stage.ok, .src-tag.stn.ok { color: var(--good-ink); } .stn-stage.bad, .src-tag.stn.bad, .station .bad { color: var(--bad-ink); }
 .stn-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 4px; } .stn-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
@@ -1333,6 +1337,7 @@ function issueModal(type, id) {
       <label class="fld"><span>需求來源</span><input id="im-src" value="${esc(d.source || '')}" placeholder="例：App Store 評論、客服、內部"></label>` : ''}
     </div>
     ${it?.sentry?.url ? `<p class="hint">Sentry 自動回報・${fmtN(it.sentry.count)} 次・${fmtN(it.sentry.users)} 人受影響・最後發生 ${minsAgo(it.sentry.lastSeen)}　<a href="${esc(it.sentry.url)}" target="_blank" rel="noopener">在 Sentry 看詳情 ↗</a></p>` : ''}
+    ${it?.sentry?.event ? sentryEventHTML(it.sentry.event) : ''}
     ${it && !ro ? stationHTML(it) : ''}
     <label class="fld"><span>${type === 'bug' ? '描述（重現步驟、預期與實際結果）' : '描述（使用情境、為什麼需要）'}</span><textarea id="im-desc" rows="5">${esc(d.desc)}</textarea></label>
     ${it ? `<p class="hint">建立於 ${new Date(it.createdAt || Date.now()).toLocaleDateString('zh-TW')}・最後更新 ${ago(it.updatedAt)}</p>` : ''}
@@ -1378,6 +1383,8 @@ function stationIssueURL(it) {
     it.platform && `- 平台：${it.platform}`, it.version && `- 版本：${it.version}`,
     s && `- Sentry：${s.short || ''} ${s.url || ''}（${fmtN(s.count)} 次、${fmtN(s.users)} 人、最後發生 ${new Date(s.lastSeen).toLocaleString('zh-TW')}）`,
     s?.culprit && `- 發生位置：\`${s.culprit}\``, '',
+    s?.event?.trace?.length && '### 卡在哪裡（最內層在上）\n```\n' + s.event.trace.slice(0, 12).join('\n') + '\n```\n',
+    s?.event?.crumbs?.length && '### 發生前的動作（UTC）\n```\n' + s.event.crumbs.join('\n') + '\n```\n',
     !!it.desc && '### 描述\n' + cut(it.desc, 1500) + '\n',
     `工作站編號 pws:${it.id}`
   ].filter(l => typeof l === 'string');
@@ -1409,6 +1416,13 @@ function mdLite(t) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\[([^\]]+)\]\((https:\/\/github\.com\/[^)\s"]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
   ).join('\n');
+}
+// The latest Sentry event, as sentry-sync stores it: where it got stuck (★ = the App's own code) and what happened just before.
+function sentryEventHTML(e) {
+  const meta = [e.release, e.os, e.device].filter(Boolean).map(esc).join('・');
+  const list = (t, rows) => rows?.length ? `<b>${t}</b><pre>${rows.map(esc).join('\n')}</pre>` : '';
+  return `<details class="sevent"><summary>錯誤細節${meta ? `<small>${meta}</small>` : ''}</summary>
+    ${e.message ? `<p>${esc(e.message)}</p>` : ''}${list('卡在哪裡（最內層在上，★ 是 App 自己的程式）', e.trace)}${list('發生前的動作（UTC）', e.crumbs)}</details>`;
 }
 function stationHTML(it) {
   const repo = stationRepo(it.product);
