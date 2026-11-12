@@ -37,24 +37,28 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 
 ## 站長（交給 Claude 修）
 
-在 Bug 或功能需求的編輯視窗按 **交給站長**：手機或電腦會打開 GitHub 的新 issue，標題、Sentry 資料、描述都已填好，按「Submit new issue」送出。負責人會改成「站長」；狀態要等 GitHub 上真的收到 issue 才會變「處理中」（見下方「站長回報」）。
+在 Bug 或功能需求的編輯視窗按 **交給站長**：表單內容先存檔，接著雲端的 Claude 馬上開工，不用開 GitHub。這筆會改成「處理中」、負責人「站長」，旁邊有「看 Claude 進度 ↗」（也會出現在 Claude App 的 Code 分頁）。
 
-- 站長是 App 倉庫裡的 GitHub Actions（`.github/workflows/claude.yml`），看到 issue 或留言寫 `@claude` 就會開工：讀程式、找原因、把修正推到 `claude/…` 分支，在 issue 回報並附上開 PR 的連結。要它改方向，就在 issue 留言 `@claude …`。
-- 只推新分支，不動 main、不合併。iOS 程式在 GitHub 上無法編譯，要自己用 Xcode build 過再送審。
-- 用的是 Claude 訂閱（secret `CLAUDE_CODE_OAUTH_TOKEN`，在電腦上跑 `claude setup-token` 產生），不需要 API 金鑰，電腦不用開著。
-- 產品對應的倉庫寫在 `index.html` 的 `STATION_REPO`：喵的，又要上班了 → `sonia6891/meow-work-app`，提醒喵 → `sonia6891/RemindCat`。沒有對應倉庫的產品不會出現這個按鈕。
-- issue 內容最後有「工作站編號 pws:…」，工作站用它找到對應的 issue。
+- 站長是 claude.ai 上的雲端排程任務「站長（產品工作站）」（`trig_01DCZDusxqi6hevT241db7g4`，claude.ai/code/routines），掛了 `meow-work-app` 和 `RemindCat` 兩個倉庫，模型 Opus 5.5。任務的說明原文在 `integrations/station/routine-prompt.md`；要改請在 claude.ai 上改，再同步回這個檔案。
+- 按下去時，edge function `station`（原始碼 `integrations/station/index.ts`）確認你是擁有者或編輯者，把標題、描述、Sentry 錯誤細節整理成資料，透過任務的 API 觸發叫醒站長。同一筆還在處理中（3 小時內）再按，要按兩次才會重來。
+- 站長讀程式、找原因、修好後推到 `claude/pws-…` 分支，不動 main、不合併、不開 GitHub issue。iOS 程式在雲端無法編譯，它會在回報裡寫出要你用 Xcode 試什麼。
+- 進度與回報（原因、改了什麼、怎麼驗證、沒測到的部分）由站長自己寫回這筆：處理中 2/5 → 做完了 → 有「開 PR ↗」可以按。每次交出都會產生一把只對這一筆有效的回報鑰匙，工作站只存它的雜湊。
+- 站長用的是 Claude 訂閱額度，跟平常用 Claude Code 算在一起。API 觸發每小時最多 30 次。
+- 產品對應的倉庫寫在 `index.html` 和 `integrations/station/index.ts` 的 `STATION_REPO`（兩邊要一致）；產品也可以有自己的 `repo` 欄位。沒有對應倉庫的產品不會出現這個按鈕。
 
-### 站長回報（不用開 GitHub）
+### 第一次接上（擁有者做一次）
 
-Edge function `station-sync`（原始碼 `integrations/station-sync/index.ts`）每 2 分鐘由 pg_cron 呼叫一次，把站長的進度寫回那筆 Bug／需求：
+1. claude.ai/code/routines → 站長（產品工作站）→ 名字旁的選單 →「Edit」→「Trigger」那列按「＋」→「API」→「Generate token」，複製金鑰（只會顯示一次）。順便可以把原本的排程（每年 1/1）刪掉，它沒有任務資料時什麼都不做。
+2. 工作站「設定 → 站長」貼上金鑰按儲存。金鑰存在 `private.station_config`（`integrations/station/station.sql`），網頁 API 讀不到，只有 edge function 能用。換金鑰就是重新產生再貼一次。
+3. 雲端環境要能連到工作站：claude.ai/code 的環境設定（任務用的是「Default」）→ Network access 選「Limited」並在 Allowed domains 加上 `bpovoxjdqdwhhlfwgpep.supabase.co`（或選 Full）。沒加的話站長還是會修，但進度回不來，4 小時後這筆會顯示「出錯了」。
 
-- 列表上會出現「站長・處理中 2/5」這類標籤；打開那筆，可以看到進度條和站長的完整回報（原因、改了什麼），還有「開 PR」「看 PR、合併」的按鈕。
-- 進度依序是：等你送出 → 已收到 → 處理中 → 做完了 → 已開 PR → 已合併。出錯也會顯示。
-- Bug 的狀態跟著 GitHub 上真正的情況走：issue 送出、站長收到 → 「處理中」；PR 合併 → 「待驗證」；交出 30 分鐘還沒送出、站長出錯、或 PR 被關掉 → 回到「待處理」。你自己設成待驗證／已解決／不處理的不會被改。用新版本確認沒問題後，再自己改成「已解決」。
-- 交出 30 分鐘後還找不到 issue，會顯示「還沒在 GitHub 送出」，按「再交一次」就好。
+### PR 追蹤與舊的 GitHub 流程
 
-需要 Supabase secret `STATION_GITHUB_TOKEN`：GitHub → Settings → Developer settings → Fine-grained tokens，Repository access 選 App 倉庫（`meow-work-app`、`RemindCat`），權限只給 Issues、Pull requests 的 **Read-only**。沒有權杖時，站長區塊會顯示「自動回報尚未啟用」。暫停：`select cron.unschedule('station-sync');`
+Edge function `station-sync`（原始碼 `integrations/station-sync/index.ts`）每 2 分鐘由 pg_cron 呼叫一次：
+
+- 直接交給站長的：超過 4 小時沒回報 → 「出錯了」、Bug 回到「待處理」。有 Supabase secret `STATION_GITHUB_TOKEN` 時，還會跟著站長推的分支看 PR：開了 → 「已開 PR，等你合併」，合併 → 「已合併，等你驗證」（Bug 變「待驗證」）。
+- 以前用 GitHub issue 交出的那幾筆，有權杖時照舊從 issue 讀進度。App 倉庫裡的 GitHub Actions（`.github/workflows/claude.yml`，在 issue 留言 `@claude`）也還在，可以繼續用。
+- `STATION_GITHUB_TOKEN`：GitHub → Settings → Developer settings → Fine-grained tokens，Repository access 選 `meow-work-app`、`RemindCat`，權限只給 Issues、Pull requests 的 **Read-only**。暫停：`select cron.unschedule('station-sync');`
 
 ## 外觀
 

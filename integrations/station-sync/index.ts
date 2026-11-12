@@ -48,7 +48,30 @@ function readClaude(body: string) {
   return { stage, done, total, branch, prCreate, job, summary };
 }
 
+// A PR from Claude's branch: open → 等你合併, merged → 已合併.
+async function findPR(repo: string, branch: string) {
+  const owner = repo.split('/')[0];
+  const prs: any[] = await gh(`/repos/${repo}/pulls?state=all&head=${encodeURIComponent(owner + ':' + branch)}&per_page=5`);
+  const pr = prs.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+  return pr ? { pr: { number: pr.number, url: pr.html_url, state: pr.state, merged: !!pr.merged_at },
+    stage: pr.merged_at ? 'merged' : pr.state === 'open' ? 'pr' : 'pr_closed' } : null;
+}
+
+// Handed straight to the cloud 站長 (edge function `station`): it reports its own progress, so here we only
+// notice a session that went quiet, and follow the PR once it pushed a branch.
+async function followDirect(d: Record<string, any>): Promise<Station> {
+  const st: Station & Record<string, any> = { ...d.station };
+  if (['queued', 'working'].includes(st.stage!) && Date.now() - (st.reportedAt || st.at) > 4 * 3_600_000)
+    return { ...st, stage: 'failed', summary: st.summary || '站長超過 4 小時沒有回報，可能沒開成工或中途停了。點「看 Claude 進度」看看，或按「再交一次」。', checkedAt: Date.now() };
+  if (token && st.branch && ['reported', 'pr'].includes(st.stage!)) {
+    const p = await findPR(st.repo, st.branch);
+    if (p) return { ...st, ...p, checkedAt: Date.now() };
+  }
+  return st;
+}
+
 async function follow(id: string, d: Record<string, any>, issuesByRepo: Map<string, any[]>): Promise<Station> {
+  if (d.station.mode === 'direct') return followDirect(d);
   const st: Station = { ...d.station };
   const s: Station = { repo: st.repo, at: st.at };
   // Find the GitHub issue: the one whose body ends with "工作站編號 pws:<id>", opened after the hand-off.
@@ -68,16 +91,7 @@ async function follow(id: string, d: Record<string, any>, issuesByRepo: Map<stri
   const c = readClaude(mine.body || '');
   Object.assign(s, { stage: c.stage, done: c.done, total: c.total, summary: c.summary, branch: c.branch, prCreate: c.prCreate, job: c.job });
 
-  // A PR from Claude's branch: open → 等你合併, merged → 已合併.
-  if (c.branch) {
-    const owner = st.repo.split('/')[0];
-    const prs: any[] = await gh(`/repos/${st.repo}/pulls?state=all&head=${encodeURIComponent(owner + ':' + c.branch)}&per_page=5`);
-    const pr = prs.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
-    if (pr) {
-      s.pr = { number: pr.number, url: pr.html_url, state: pr.state, merged: !!pr.merged_at };
-      s.stage = pr.merged_at ? 'merged' : pr.state === 'open' ? 'pr' : 'pr_closed';
-    }
-  }
+  if (c.branch) { const p = await findPR(st.repo, c.branch); if (p) Object.assign(s, p); }
   return { ...s, checkedAt: Date.now() };
 }
 
@@ -91,15 +105,17 @@ Deno.serve(async () => {
   token = Deno.env.get('STATION_GITHUB_TOKEN') || '';
   const status: Record<string, any> = { at: Date.now(), ok: !!token, repos: {} };
   if (!token) status.error = 'no_token';
-  const { data: docs, error } = token ? await sb.from('docs').select('id,data,updated_at').eq('collection', 'issues').not('data->station', 'is', null) : { data: [], error: null };
+  // Without a GitHub token only the direct hand-offs (which report by themselves) are looked after.
+  const { data: docs, error } = await sb.from('docs').select('id,data,updated_at').eq('collection', 'issues').not('data->station', 'is', null);
   if (error) { status.ok = false; status.error = error.message; }
-  const todo = (docs || []).filter(d => active(d.data));
+  const todo = (docs || []).filter(d => active(d.data) && (token || d.data.station.mode === 'direct'));
 
-  // One listing per repo covers every hand-off that hasn't found its issue yet.
+  // One listing per repo covers every GitHub-issue hand-off that hasn't found its issue yet.
   const issuesByRepo = new Map<string, any[]>();
   for (const repo of new Set(todo.map(d => d.data.station.repo as string))) {
+    if (!token || !todo.some(d => d.data.station.repo === repo && d.data.station.mode !== 'direct')) { status.repos[repo] = { ok: true, following: 0 }; continue; }
     try {
-      const since = Math.min(...todo.filter(d => d.data.station.repo === repo).map(d => d.data.station.at)) - 10 * 60_000;
+      const since = Math.min(...todo.filter(d => d.data.station.repo === repo && d.data.station.mode !== 'direct').map(d => d.data.station.at)) - 10 * 60_000;
       issuesByRepo.set(repo, await gh(`/repos/${repo}/issues?state=all&sort=created&direction=desc&per_page=100&since=${new Date(since).toISOString()}`));
       status.repos[repo] = { ok: true, following: 0 };
     } catch (e) {
