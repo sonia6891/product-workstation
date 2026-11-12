@@ -1472,11 +1472,12 @@ function subsNowHTML() {
   const rows = PL.filter(([p]) => sum(p, 'active') || newOf(p)).map(([p, l]) =>
     `<tr><td>${l}</td><td class="n">${fmtVal(sum(p, 'active'), 'int')}</td><td class="n">${fmtVal(sum(p, 'renewing'), 'int')}</td><td class="n">${fmtVal(sum(p, 'off'), 'int')}</td>${trial ? `<td class="n">${fmtVal(sum(p, 'trial'), 'int')}</td>` : ''}<td class="n">${fmtVal(newOf(p), 'int')}</td></tr>`).join('');
   const monthNew = snaps.reduce((a, s) => a + (+s.month_new || 0), 0), monthOff = snaps.reduce((a, s) => a + (+s.month_off || 0), 0), monthExp = snaps.reduce((a, s) => a + (+s.month_expired || 0), 0);
+  const usingKnown = snaps.some(s => s.month_off_using != null), offUsing = snaps.reduce((a, s) => a + (+s.month_off_using || 0), 0);
   const mo = +TODAY.slice(5, 7);
   return `<section class="card span12"><header><h3>訂閱現況<small>此刻的有效訂閱・依 App Store 通知即時更新</small></h3><button class="btn sm" data-act="go" data-id="churn">退訂紀錄</button></header>
     <div class="tw"><table class="t"><thead><tr><th>方案</th><th class="n">有效<span class="lg">訂閱</span></th><th class="n">會<span class="lg">自動</span>續訂</th><th class="n">已關閉<span class="lg">續訂</span></th>${trial ? '<th class="n">試用中</th>' : ''}<th class="n">${mo} 月新<span class="lg">訂閱</span></th></tr></thead>
     <tbody>${rows}<tr><td><b>合計</b></td><td class="n"><b>${fmtVal(total.active, 'int')}</b></td><td class="n"><b>${fmtVal(total.renewing, 'int')}</b></td><td class="n"><b>${fmtVal(total.off, 'int')}</b></td>${trial ? `<td class="n"><b>${fmtVal(total.trial, 'int')}</b></td>` : ''}<td class="n"><b>${fmtVal(monthNew, 'int')}</b></td></tr></tbody></table></div>
-    <p class="hint" style="margin:10px 0 0">「已關閉續訂」的人這一期已付費、到期前仍可使用，但到期後不會再扣款。${mo} 月至今：新訂閱 ${monthNew}・關閉續訂 ${monthOff}・到期失效 ${monthExp}。</p></section>`;
+    <p class="hint" style="margin:10px 0 0">「已關閉續訂」的人這一期已付費、到期前仍可使用，但到期後不會再扣款。${mo} 月至今：新訂閱 ${monthNew}・關閉續訂 ${monthOff}${usingKnown && monthOff ? `（<b>${offUsing} 位退訂後隔天還在用</b>）` : ''}・到期失效 ${monthExp}。</p></section>`;
 }
 
 /* ================= render: cancellations ================= */
@@ -1503,9 +1504,15 @@ function renderChurn(el) {
     .sort((a, b) => new Date(b.event_at) - new Date(a.event_at));
   const by = k => evs.filter(e => e.kind === k);
   const cancels = by('cancel');
-  const tile = (label, n, note) => `<div class="kpi"><div class="kl">${label}</div><div class="kv">${fmtVal(n, 'int')}</div><div class="kd"><span>${note}</span></div></div>`;
+  // Last day the person's account did anything in the app (from the 訂閱現況 snapshot), and whether that is after this event's day.
+  const lastUsed = e => e.account ? S.subs.get(e.product_id)?.last_used?.[e.account] || null : null;
+  const usedLater = e => { const d = lastUsed(e); return !!d && d > iso(new Date(e.event_at)); };
+  const hasUsage = [...S.subs.values()].some(s => s.last_used);
+  const tile =(label, n, note) => `<div class="kpi"><div class="kl">${label}</div><div class="kv">${fmtVal(n, 'int')}</div><div class="kd"><span>${note}</span></div></div>`;
   const trialN = cancels.filter(e => e.trial).length;
-  const tiles = tile('關閉自動續訂', cancels.length, trialN ? `其中 ${trialN} 位在試用期` : '這一期仍可用到期滿')
+  const usingN = new Set(cancels.filter(usedLater).map(e => e.product_id + '/' + e.account)).size;
+  const cancelNote = [trialN ? `${trialN} 位在試用期` : '', hasUsage && cancels.length ? `${usingN} 位之後還在用` : ''].filter(Boolean).join('・') || '這一期仍可用到期滿';
+  const tiles = tile('關閉自動續訂', cancels.length, cancelNote)
     + tile('到期失效', by('expire').length, '方案到期、沒有續費')
     + tile('退款', by('refund').length, '向 Apple 申請退款')
     + tile('重新開啟續訂', by('resume').length, '關掉後又改回來');
@@ -1524,13 +1531,15 @@ function renderChurn(el) {
     const k = SUBKIND[e.kind] || [e.kind, 'st-open'];
     const why = e.kind === 'expire' && EXPIRE_WHY[e.subtype] ? `<span class="hint">（${EXPIRE_WHY[e.subtype]}）</span>` : '';
     const span = e.first_paid_at ? new Date(e.event_at) - new Date(e.first_paid_at) : null;
+    const lu = lastUsed(e);
+    const used = !hasUsage ? '' : `<td class="mono">${lu ? `${+lu.slice(5, 7)}/${+lu.slice(8)}${usedLater(e) ? '<span class="sample-tag">之後還在用</span>' : ''}` : '<span class="hint">—</span>'}</td>`;
     return `<tr><td class="mono">${whenText(e.event_at)}</td>${showP ? `<td><i class="dot" style="background:${pColor(e.product_id)}"></i> ${esc(pName(e.product_id))}</td>` : ''}
       <td><span class="pill ${k[1]}">${k[0]}</span>${why}</td>
       <td>${esc(planName(e.plan))}${e.trial ? '<span class="sample-tag">試用期</span>' : ''}</td>
       <td class="mono">${e.first_paid_at ? whenText(e.first_paid_at) : '—'}</td><td class="n">${spanText(span)}</td>
-      <td class="n">${moneyText(e.paid_total)}</td><td>${e.market && e.market !== 'OTHER' ? esc(mName(e.market)) : '—'}</td><td class="mono hint">${esc(e.account || '—')}</td></tr>`;
+      <td class="n">${moneyText(e.paid_total)}</td><td>${e.market && e.market !== 'OTHER' ? esc(mName(e.market)) : '—'}</td><td class="mono hint">${esc(e.account || '—')}</td>${used}</tr>`;
   }).join('');
-  const table = evs.length ? `<div class="tw"><table class="t"><thead><tr><th>時間</th>${showP ? '<th>產品</th>' : ''}<th>事件</th><th>方案</th><th>第一次付費</th><th class="n">付費多久後</th><th class="n">已付金額</th><th>市場</th><th>帳號</th></tr></thead><tbody>${rows}</tbody></table></div>`
+  const table = evs.length ? `<div class="tw"><table class="t"><thead><tr><th>時間</th>${showP ? '<th>產品</th>' : ''}<th>事件</th><th>方案</th><th>第一次付費</th><th class="n">付費多久後</th><th class="n">已付金額</th><th>市場</th><th>帳號</th>${hasUsage ? '<th>最後使用</th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>`
     : '<p class="hint">這段期間沒有退訂、到期或退款。</p>';
 
   el.innerHTML = `<div class="grid12">
@@ -1538,7 +1547,8 @@ function renderChurn(el) {
     <section class="card span5"><header><h3>付費多久後關閉續訂<small>${median != null ? '中位數 ' + spanText(median) : ''}</small></h3></header>${dist}</section>
     <section class="card span7"><header><h3>怎麼看這些數字</h3></header>
       <p class="hint" style="margin:0 0 8px">「關閉自動續訂」不是退款：這一期的錢已經付了，Pro 會用到期滿，到期那天才會再出現一筆「到期失效」。退款是用戶另外向 Apple 申請的。</p>
-      <p class="hint" style="margin:0">「帳號」是 App 內部帳號的代碼，同一個代碼就是同一個人；Apple 不提供姓名或 Email。已付金額是用戶付的價錢，未扣 Apple 抽成。</p></section>
+      <p class="hint" style="margin:0">「帳號」是 App 內部帳號的代碼，同一個代碼就是同一個人；Apple 不提供姓名或 Email。已付金額是用戶付的價錢，未扣 Apple 抽成。</p>
+      ${hasUsage ? '<p class="hint" style="margin:8px 0 0">「最後使用」是這個帳號最後一次在 App 裡留下紀錄的日子（同步資料、備份、AI 助理、語音輸入）；只打開看看、沒改東西不會留紀錄。比退訂那天晚，就標「之後還在用」。刪掉帳號的人追不到，顯示 —。</p>' : ''}</section>
     <section class="card span12"><header><h3>明細<small>${evs.length} 筆${evs.length > 300 ? '・顯示最近 300 筆' : ''}</small></h3></header>${table}</section>
   </div>`;
 }

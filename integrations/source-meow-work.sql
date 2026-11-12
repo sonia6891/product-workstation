@@ -174,7 +174,31 @@ a as (
 ),
 m0 as (select date_trunc('month', now() at time zone 'Asia/Taipei') at time zone 'Asia/Taipei' t0),
 -- This month's new subscriptions: first paid transaction this month (same rule as 新訂閱 in export_rows).
-firsts as (select distinct on (otid) otid, pd first_pd, prod from tx where paid order by otid, pd)
+firsts as (select distinct on (otid) otid, pd first_pd, prod from tx where paid order by otid, pd),
+-- 退訂後還在用: everyone who ever turned auto-renew off, and the last day (Asia/Taipei) the app did anything for
+-- their account (sync, backup checkpoint, push token, AI chat, speech). App opens are anonymous (install_id), so
+-- opening the app without changing anything leaves no trace here. Deleted accounts have no user and drop out.
+offs as (
+  select distinct on (coalesce(original_transaction_id, t->>'originalTransactionId'))
+    coalesce(original_transaction_id, t->>'originalTransactionId') otid, created_at off_at
+  from all_ev where event_type = 'DID_CHANGE_RENEWAL_STATUS' and subtype = 'AUTO_RENEW_DISABLED'
+  order by coalesce(original_transaction_id, t->>'originalTransactionId'), created_at desc
+),
+off_users as (
+  select o.otid, o.off_at, (o.off_at at time zone 'Asia/Taipei')::date off_day,
+    (select e.user_id from all_ev e where coalesce(e.original_transaction_id, e.t->>'originalTransactionId') = o.otid and e.user_id is not null order by e.created_at limit 1) uid
+  from offs o
+),
+off_used as (
+  select u.*, greatest(
+    (select (s.updated_at at time zone 'Asia/Taipei')::date from public.user_sync_state s where s.user_id = u.uid),
+    (select (max(b.created_at) at time zone 'Asia/Taipei')::date from public.user_sync_backups b where b.user_id = u.uid and b.reason <> 'before_support_restore'),
+    (select (max(p.updated_at) at time zone 'Asia/Taipei')::date from public.push_devices p where p.user_id = u.uid),
+    (select max(a.day) from public.assistant_chat_usage_daily a where a.user_id = u.uid),
+    (select max(sp.day) from public.speech_transcribe_daily sp where sp.user_id = u.uid)
+  ) last_day
+  from off_users u where u.uid is not null
+)
 select jsonb_build_object(
   'at', (extract(epoch from now()) * 1000)::bigint,
   'plans', coalesce((select jsonb_object_agg(plan, jsonb_build_object('active', n, 'renewing', rn, 'off', o, 'trial', tr)) from (
@@ -184,7 +208,13 @@ select jsonb_build_object(
      select case when prod ~* 'year|annual' then 'yearly' when prod ~* 'month' then 'monthly' else 'other' end plan, count(*) n
      from firsts, m0 where first_pd >= m0.t0 group by 1) z), '{}'::jsonb),
   'month_off', (select count(*) from all_ev, m0 where event_type = 'DID_CHANGE_RENEWAL_STATUS' and subtype = 'AUTO_RENEW_DISABLED' and created_at >= m0.t0),
-  'month_expired', (select count(*) from all_ev, m0 where event_type = 'EXPIRED' and created_at >= m0.t0)
+  'month_expired', (select count(*) from all_ev, m0 where event_type = 'EXPIRED' and created_at >= m0.t0),
+  -- Of the people who turned auto-renew off this month: how many still used the app on a later day.
+  'month_off_using', (select count(*) from off_used, m0 where off_at >= m0.t0 and last_day > off_day),
+  -- Last day each cancelling account used the app, keyed by the same account code as export_events.
+  'last_used', coalesce((select jsonb_object_agg(acc, last_day) from (
+     select upper(left(md5(uid::text), 6)) acc, max(last_day) last_day from off_used where last_day is not null
+     group by 1 order by max(off_at) desc limit 300) z), '{}'::jsonb)
 )
 $fn$;
 revoke execute on function workstation.export_subs() from public, anon, authenticated;
