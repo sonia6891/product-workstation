@@ -42,8 +42,13 @@ tx as (
   where e.environment = 'Production' and t ? 'transactionId' and t ? 'purchaseDate'
   order by t->>'transactionId', e.created_at
 ),
+-- 新訂閱 = the day a subscription first paid money. A free trial counts only once it turns into a payment
+-- (then on that day), so trials cancelled before paying are not new subscriptions.
+first_paid as (
+  select distinct on (otid) otid, pday, sf from tx where price > 0 order by otid, pd
+),
 subs as (
-  select pday d, sf m, count(distinct otid) n from tx where tid = otid and pday between p_from and p_to group by 1, 2
+  select pday d, sf m, count(*) n from first_paid where pday between p_from and p_to group by 1, 2
 ),
 rev as (
   select d, m, jsonb_object_agg(cur, amt) amt from (
@@ -147,6 +152,7 @@ tx as (
     to_timestamp((t->>'purchaseDate')::numeric / 1000) pd,
     to_timestamp(nullif(t->>'expiresDate', '')::numeric / 1000) ed,
     coalesce(t->>'productId', product_id) prod,
+    coalesce(nullif(t->>'price', '')::numeric, 0) > 0 paid,
     t->>'offerType' = '1' and coalesce(nullif(t->>'price', '')::numeric, 0) = 0 trial,
     t ? 'revocationDate' revoked
   from all_ev where t ? 'transactionId' and t ? 'purchaseDate'
@@ -167,7 +173,8 @@ a as (
   from cur c left join renew r on r.otid = c.otid
 ),
 m0 as (select date_trunc('month', now() at time zone 'Asia/Taipei') at time zone 'Asia/Taipei' t0),
-firsts as (select otid, min(pd) first_pd, (array_agg(prod order by pd))[1] prod from tx group by otid)
+-- This month's new subscriptions: first paid transaction this month (same rule as 新訂閱 in export_rows).
+firsts as (select distinct on (otid) otid, pd first_pd, prod from tx where paid order by otid, pd)
 select jsonb_build_object(
   'at', (extract(epoch from now()) * 1000)::bigint,
   'plans', coalesce((select jsonb_object_agg(plan, jsonb_build_object('active', n, 'renewing', rn, 'off', o, 'trial', tr)) from (
