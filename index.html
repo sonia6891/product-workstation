@@ -725,7 +725,7 @@ function writeDays(p, m, mo, mutate) {
 const genId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 20);
 const mapOf = c => c === 'products' ? S.products : c === 'issues' ? S.issues : c === 'events' ? S.events : null;
 function applyDoc(c, id, data) {
-  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id === 'station') S.station = data; else if (id === 'station-fire') S.stationFire = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } return; }
+  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id === 'meta-ads') S.metaAds = data; else if (id === 'station') S.station = data; else if (id === 'station-fire') S.stationFire = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } return; }
   const m = mapOf(c); if (!m) return;
   if (data) m.set(id, Object.assign({}, data, { id })); else m.delete(id);
 }
@@ -806,7 +806,7 @@ async function fetchAll(table) {
 }
 async function loadAll() {
   const [docs, rows, subs] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics'), fetchAll('sub_events').catch(() => [])]);
-  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.sentry = null; S.station = null; S.stationFire = null; S.cfg = DEFAULT_CFG;
+  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.sentry = null; S.metaAds = null; S.station = null; S.stationFire = null; S.cfg = DEFAULT_CFG;
   docs.forEach(d => applyDoc(d.collection, d.id, d.data));
   rows.forEach(r => applyRow(r));
   subs.forEach(r => S.subEvents.set(r.product_id + '/' + r.event_id, r));
@@ -1315,6 +1315,14 @@ function sentryBarHTML() {
   if (z.error) return `<div class="sbar"><b>Sentry 自動回報</b><span class="bad">尚未啟用：${esc(SENTRY_ERR[z.error] || z.error)}</span><span>放入權杖後，喵的又要上班了、提醒喵的錯誤會自動出現在這裡。</span></div>`;
   const parts = Object.entries(z.sources || {}).map(([p, v]) => v.ok ? `<span>${esc(pName(p))}：<b>${v.open}</b> 個未解決錯誤</span>` : `<span class="bad">${esc(pName(p))}：同步失敗（${esc(SENTRY_ERR[v.error] || v.error)}）</span>`).join('');
   return `<div class="sbar"><b>Sentry 自動回報</b>${parts}<span class="hint">每 2 分鐘同步・最後 ${minsAgo(z.at)}</span></div>`;
+}
+const META_ERR = { no_token: '還沒放入 Meta 權杖', token_rejected: 'Meta 權杖無效或已過期', no_permission: '權杖沒有這個廣告帳號的讀取權限', rate_limited: 'Meta 暫時限制查詢次數，下一小時會再試', no_exchange_rate: '查不到匯率' };
+function metaAdsHTML() {
+  const z = S.metaAds;
+  if (!z || z.error) return `<div class="sbar"><b>Meta 廣告費自動同步</b><span class="bad">尚未啟用${z ? '：' + esc(META_ERR[z.error] || z.error) : ''}</span><span>放入權杖後，每小時把 Meta 每天、每個國家的花費寫進數據的「廣告花費」（通路：Meta）。</span></div>`;
+  const per = Object.entries(z.products || {}).map(([p, v]) => `<span>${esc(pName(p))}：<b>${fmtN(Math.round(v))}</b></span>`).join('');
+  const miss = (z.unmatched || []).length ? `<span class="bad">有 ${z.unmatched.length} 個活動認不出是哪個 App，花費沒有算進去：${z.unmatched.map(u => esc(u.name)).join('、')}</span>` : '';
+  return `<div class="sbar"><b>Meta 廣告費自動同步</b><span>${esc(z.from)}～${esc(z.to)}（${esc(z.currency)}）</span>${per || '<span>這段期間沒有花費</span>'}${miss}<span class="hint">每小時同步・最後 ${minsAgo(z.at)}</span></div>`;
 }
 function issueModal(type, id) {
   const it = id ? S.issues.get(id) : null;
@@ -1875,6 +1883,7 @@ function buildSettings(el) {
       </form>
     </section>
     <section class="card span6"><header><h3>讓數據自動進來</h3></header>
+      <div style="margin-bottom:12px">${metaAdsHTML()}</div>
       <p class="hint" style="font-size:13.5px;line-height:1.7">目前可以手動輸入或貼 CSV。想要更省力，有三種做法，由簡到繁：</p>
       <ol class="steps" style="font-size:13.5px;line-height:1.7">
         <li><b>每週匯出一次 CSV</b>：App Store Connect（銷售與趨勢）、Google Play Console（統計資料）、RevenueCat（Charts）和各廣告後台都能匯出，整理成上方格式貼入即可。</li>
