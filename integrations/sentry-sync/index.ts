@@ -67,6 +67,11 @@ function shipped(old: Record<string, any>, sentry: Record<string, any>, store: {
   return /^\d+(\.\d+)*$/.test(v) && newer(store.version, v) && sentry.lastSeen < store.at;
 }
 
+// Postgres jsonb keeps object keys in its own order, so compare with sorted keys (else every row looks changed).
+const stable = (v: unknown): unknown => Array.isArray(v) ? v.map(stable)
+  : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map(k => [k, stable((v as any)[k])])) : v;
+const same = (a: unknown, b: unknown) => JSON.stringify(stable(a)) === JSON.stringify(stable(b));
+
 function priority(i: { level: string; userCount: number }) {
   if (i.level === 'fatal') return 'P0';
   if (i.level === 'error') return i.userCount >= 20 ? 'P1' : 'P2';
@@ -93,6 +98,11 @@ Deno.serve(async () => {
       const { data: existing, error } = await sb.from('docs').select('id,data').eq('collection', 'issues').like('id', `sentry-${s.product}-%`);
       if (error) throw error;
       const ex = new Map((existing || []).map(d => [d.id, d.data]));
+      // Bugs marked 已解決 leave the list (moved to 'solved' by a database trigger, see integrations/solved.sql).
+      const { data: gone, error: e3 } = await sb.from('docs').select('id,data').eq('collection', 'solved').like('id', `sentry-${s.product}-%`);
+      if (e3) throw e3;
+      const solved = new Map((gone || []).map(d => [d.id, d.data]));
+      const unsolve: string[] = [];
       const seen = new Set<string>(), rows = [];
       let traced = 0;
       for (const i of issues) {
@@ -100,8 +110,11 @@ Deno.serve(async () => {
         const old = ex.get(id);
         const sentry: Record<string, any> = { id: i.id, short: i.shortId, url: i.permalink, level: i.level, count: Number(i.count) || 0, users: i.userCount || 0,
           firstSeen: Date.parse(i.firstSeen), lastSeen: Date.parse(i.lastSeen), culprit: i.culprit || '' };
+        // Solved before (moved out of the list): skipped unless it happened again afterwards, see below.
+        const was = !old && solved.get(id);
+        if (was && !(sentry.lastSeen > (was.solvedAt || 0))) continue;
         // The latest event's stack: kept from before unless the issue happened again since it was read.
-        const prevEvent = old?.sentry?.event;
+        const prevEvent = (old || was)?.sentry?.event;
         if (prevEvent && prevEvent.seen === sentry.lastSeen && prevEvent.crumbs) sentry.event = prevEvent;
         else if (traced < TRACE_LIMIT) {
           traced++;
@@ -109,6 +122,13 @@ Deno.serve(async () => {
           if (e) sentry.event = { ...e, seen: sentry.lastSeen };
           else if (prevEvent) sentry.event = prevEvent;
         } else if (prevEvent) sentry.event = prevEvent;
+        if (was) {
+          // It happened again after it was solved → back in the list as 待處理, with its history.
+          const { solvedAt: _s, autoSolved: _a, ...back } = was;
+          rows.push(row(id, { ...back, title: i.title, sentry, status: 'new', updatedAt: Date.now(), reopened: { at: Date.now(), solvedAt: was.solvedAt } }));
+          unsolve.push(id);
+          continue;
+        }
         if (!old) {
           rows.push(row(id, { type: 'bug', title: i.title, product: s.product, priority: priority(i), status: 'new', platform: '', version: '', owner: '',
             desc: `${sentry.culprit}\n\n來源：Sentry ${sentry.short}`.trim(), createdAt: sentry.firstSeen, updatedAt: sentry.lastSeen, sentry }));
@@ -118,7 +138,7 @@ Deno.serve(async () => {
         const regressed = old.status === 'done' && sentry.lastSeen > (old.updatedAt || 0);
         const fixed = !regressed && ['new', 'doing', 'verify'].includes(old.status) && ['merged', 'reported'].includes(old.station?.stage)
           && shipped(old, sentry, await storeNow());
-        if (!regressed && !fixed && JSON.stringify(old.sentry) === JSON.stringify(sentry) && old.title === i.title) continue;
+        if (!regressed && !fixed && same(old.sentry, sentry) && old.title === i.title) continue;
         const next: Record<string, any> = { ...old, title: i.title, sentry, status: regressed ? 'new' : fixed ? 'done' : old.status,
           updatedAt: regressed || fixed ? Date.now() : Math.max(old.updatedAt || 0, sentry.lastSeen) };
         if (fixed) next.autoSolved = { version: store!.version, at: Date.now() };
@@ -128,12 +148,31 @@ Deno.serve(async () => {
       // Resolved (or quiet for 90 days) in Sentry → 已解決 here. Only when the list wasn't cut off at 100.
       if (issues.length < 100) for (const [id, d] of ex) if (!seen.has(id) && isOpen(d.status)) rows.push(row(id, { ...d, status: 'done', updatedAt: Date.now() }));
       if (rows.length) { const { error: e2 } = await sb.from('docs').upsert(rows); if (e2) throw e2; }
+      if (unsolve.length) await sb.from('docs').delete().eq('collection', 'solved').in('id', unsolve);
       (status.sources as Record<string, unknown>)[s.product] = { ok: true, open: issues.length, changed: rows.length };
     } catch (e) {
       status.ok = false;
       (status.sources as Record<string, unknown>)[s.product] = { ok: false, error: String((e as Error).message || e) };
     }
   }
+  // 改版標記: each new App Store version becomes a ◆ 版本更新 event on the 總覽 charts, once per version (deleting
+  // it keeps it deleted). Checked at most hourly; cfg/store-versions remembers the last version seen per product.
+  try {
+    const { data: sv } = await sb.from('docs').select('data').match({ collection: 'cfg', id: 'store-versions' }).maybeSingle();
+    const seenV = (sv?.data || {}) as Record<string, any>;
+    if (Date.now() - (seenV._at || 0) > 3_600_000) {
+      const nextV: Record<string, any> = { ...seenV, _at: Date.now() }, evs = [];
+      for (const [pid, ios] of iosOf) {
+        const st = ios ? await appStore(ios).catch(() => null) : null;
+        if (!st || seenV[pid]?.version === st.version) continue;
+        nextV[pid] = st;
+        const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(st.at);
+        evs.push(row(`release-${pid}-${st.version}`, { date, kind: 'release', product: pid, title: `iOS ${st.version} 上架`, auto: true, createdAt: Date.now() }, 'events'));
+      }
+      if (evs.length) await sb.from('docs').upsert(evs, { ignoreDuplicates: true });
+      await sb.from('docs').upsert(row('store-versions', nextV, 'cfg'));
+    }
+  } catch (_) { /* a missed check just waits for the next run */ }
   await sb.from('docs').upsert(row('sentry', status, 'cfg'));
   return json(status);
 });

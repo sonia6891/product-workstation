@@ -611,7 +611,7 @@ const isOpen = s => s !== 'done' && s !== 'wont';
 const SLOT = i => `var(--s${(i % 8) + 1})`;
 
 /* ================= state ================= */
-const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), subEvents: new Map(), subs: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
+const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), subEvents: new Map(), subs: new Map(), usage: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
 const UI = { view: 'overview', product: 'all', market: 'all', range: 'mo', metric: 'dl', group: 'auto', f: { bug: { st: 'open', pri: 'all', q: '' }, feature: { st: 'open', pri: 'all', q: '' } } };
 try { const saved = JSON.parse(localStorage.getItem('pws-ui') || 'null'); if (saved) Object.assign(UI, saved, { f: Object.assign(UI.f, saved.f || {}) }); } catch (e) {}
 // 期間: 7 天, 當月, 3 個月, 12 個月. A choice saved before 11/13 (30 / 90 天) becomes 當月 / 3 個月.
@@ -727,8 +727,10 @@ function writeDays(p, m, mo, mutate) {
 const genId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 20);
 const mapOf = c => c === 'products' ? S.products : c === 'issues' ? S.issues : c === 'events' ? S.events : null;
 function applyDoc(c, id, data) {
-  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id === 'meta-ads') S.metaAds = data; else if (id === 'station') S.station = data; else if (id === 'station-fire') S.stationFire = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } return; }
+  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id === 'meta-ads') S.metaAds = data; else if (id === 'station') S.station = data; else if (id === 'station-fire') S.stationFire = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } else if (id.startsWith('usage-')) { if (data) S.usage.set(id.slice(6), data); else S.usage.delete(id.slice(6)); } else if (id === 'store-versions') S.storeVersions = data; return; }
   const m = mapOf(c); if (!m) return;
+  // A bug marked 已解決 leaves the list (the database moves it to 'solved', see integrations/solved.sql).
+  if (data && c === 'issues' && data.type === 'bug' && data.status === 'done') data = null;
   if (data) m.set(id, Object.assign({}, data, { id })); else m.delete(id);
 }
 function rowToRec(r) {
@@ -808,7 +810,7 @@ async function fetchAll(table) {
 }
 async function loadAll() {
   const [docs, rows, subs] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics'), fetchAll('sub_events').catch(() => [])]);
-  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.sentry = null; S.metaAds = null; S.station = null; S.stationFire = null; S.cfg = DEFAULT_CFG;
+  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.usage = new Map(); S.storeVersions = null; S.sentry = null; S.metaAds = null; S.station = null; S.stationFire = null; S.cfg = DEFAULT_CFG;
   docs.forEach(d => applyDoc(d.collection, d.id, d.data));
   rows.forEach(r => applyRow(r));
   subs.forEach(r => S.subEvents.set(r.product_id + '/' + r.event_id, r));
@@ -1046,7 +1048,7 @@ function paintLine(host) {
   const m = { l: 52, r: 12, t: 12, b: 24 }, n = cfg.labels.length;
   let max = 0, any = false;
   cfg.series.forEach(s => s.values.forEach(v => { if (v != null) { any = true; if (v > max) max = v; } }));
-  const ymax = niceMax(max * 1.04);
+  const ymax = cfg.max ? Math.min(cfg.max, niceMax(max * 1.04)) : niceMax(max * 1.04);
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const x = i => m.l + (n <= 1 ? iw / 2 : i * iw / (n - 1));
   const y = v => m.t + ih * (1 - v / ymax);
@@ -1249,6 +1251,8 @@ function renderOverview(el) {
       ${legendHTML(series)}<div class="chart" id="c-trend"></div></section>
     <section class="card span7"><header><h3>營收與廣告花費<small>ROAS ${fmtVal(roas, 'x')}</small></h3></header>${legendHTML(ra)}<div class="chart" id="c-ra"></div></section>
     <section class="card span5"><header><h3>廣告通路花費<small>合計 ${fmtVal(chTotal, 'cur')}</small></h3></header>${chHTML}</section>
+    ${roiHTML(P, cur)}
+    ${usageHTML()}
     <section class="card span12"><header><h3>各市場成效<small>點選列可只看該市場</small></h3></header>${mTable}</section>
     ${pTable}
     <section class="card span6"><header><h3>待處理 Bug<small>${ob.length} 筆未結案</small></h3><button class="btn sm" data-act="go" data-id="bugs">全部 Bug</button></header>
@@ -1260,6 +1264,76 @@ function renderOverview(el) {
   const emptyText = `這段期間還沒有數據${canWrite && db ? '<br><button class="btn sm" style="margin-top:10px" data-act="go" data-id="data">前往數據輸入</button>' : ''}`;
   drawLine($('#c-trend'), { labels: tr.B.map(b => b.label), full: tr.B.map(b => b.full), series, fmt: METRICS[UI.metric].fmt, events: evs, area: true, height: 260, aria: '成長趨勢圖', emptyText });
   drawLine($('#c-ra'), { labels: daily.B.map(b => b.label), full: daily.B.map(b => b.full), series: ra, fmt: 'cur', height: 220, aria: '營收與廣告花費', emptyText: '這段期間還沒有數據' });
+  USAGE_CHARTS.forEach(c => { const host = document.getElementById(c.id); if (host) drawLine(host, c.cfg); });
+}
+
+/* ================= 廣告回本 ================= */
+// What the ad money bought in this period, per market that had spend. Meta doesn't say which installs its ads
+// brought, so downloads and subscriptions include people who came on their own: these are blended costs, and the
+// markets without ads are shown next to them for comparison. Revenue is what users paid (before Apple's cut).
+function roiHTML(P, cur) {
+  if (!(cur.ad > 0)) return '';
+  const byM = [...aggregate({ start: P.start, end: P.end, gran: 'all', groupBy: 'market' }).groups.values()].map(g => ({ k: g.key, c: g.s[0] }));
+  const paid = byM.filter(r => r.c.ad > 0).sort((a, b) => b.c.ad - a.c.ad);
+  const free = byM.filter(r => !(r.c.ad > 0)).reduce((a, r) => mergeCells(a, r.c), blankCell());
+  // Revenue per new subscription: this period's revenue (first payments, yearly plans paid up front, renewals) ÷ new
+  // subscriptions. Next to what one cost, it says whether a paying user brings back more than the ads spent on them.
+  const cpa = cur.sub ? cur.ad / cur.sub : null, perSub = cur.sub ? cur.rev / cur.sub : null;
+  const verdict = cpa && perSub ? (perSub >= cpa ? `<b style="color:var(--good-ink)">平均每個新付費用戶帶來的營收比找到他的成本多 ${fmtVal(perSub - cpa, 'cur')}</b>` : `<b style="color:var(--bad-ink)">平均每個新付費用戶帶來的營收還少於找到他的成本 ${fmtVal(cpa - perSub, 'cur')}</b>`) : '';
+  const stat = (v, l) => `<span class="stat"><b>${v}</b><span>${l}</span></span>`;
+  const row = (name, c, act) => `<tr${act ? ` class="click" data-act="pickmarket" data-id="${esc(act)}"` : ''}><td>${name}</td><td class="n">${fmtVal(c.ad, 'cur')}</td><td class="n">${fmtVal(cellVal(c, 'dl'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'sub'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'cpi'), 'cur2')}</td><td class="n">${fmtVal(cellVal(c, 'cpa'), 'cur')}</td><td class="n">${fmtVal(cellVal(c, 'rev'), 'cur')}</td><td class="n">${fmtVal(cellVal(c, 'roas'), 'x')}</td></tr>`;
+  const dash = '<td class="n hint">—</td>';
+  const freeRow = free.has && UI.market === 'all' ? `<tr><td class="hint">沒投廣告的市場</td>${dash}<td class="n hint">${fmtVal(free.dl, 'int')}</td><td class="n hint">${fmtVal(free.sub, 'int')}</td>${dash}${dash}<td class="n hint">${fmtVal(free.rev, 'cur')}</td>${dash}</tr>` : '';
+  return `<section class="card span12"><header><h3>廣告回本<small>這段期間花的廣告費換回了什麼</small></h3></header>
+    <div class="stat-row" style="margin-bottom:12px">${stat(fmtVal(cur.ad, 'cur'), '廣告花費')}${stat(fmtVal(cellVal(cur, 'cpi'), 'cur2'), '每次下載成本')}${stat(fmtVal(cpa, 'cur'), '每個新付費用戶成本')}${stat(fmtVal(cellVal(cur, 'roas'), 'x'), '營收 ÷ 廣告費')}${stat(fmtVal(perSub, 'cur'), '每個新訂閱帶來營收')}</div>
+    ${verdict ? `<p style="margin:0 0 12px">${verdict}（未扣 Apple 抽成）。</p>` : ''}
+    <div class="tw"><table class="t"><thead><tr><th>投廣告的市場</th><th class="n">花費</th><th class="n">下載</th><th class="n">新訂閱</th><th class="n">每次下載成本</th><th class="n">每個新付費用戶成本</th><th class="n">營收</th><th class="n">營收 ÷ 廣告費</th></tr></thead>
+    <tbody>${paid.map(r => row(`<i class="dot" style="background:${SLOT(mIndex(r.k))}"></i> ${esc(mName(r.k))} <span class="mono hint">${esc(r.k)}</span>`, r.c, r.k)).join('')}${freeRow}</tbody></table></div>
+    <p class="hint" style="margin:10px 0 0">Meta 不會告訴我們哪些下載是廣告帶來的，所以下載與新訂閱也包含自己找來的人，成本是「整體平均」；跟沒投廣告的市場比，就看得出廣告多帶來多少。「每個新訂閱帶來營收」= 期間營收 ÷ 新訂閱，營收含年費一次付清與續訂，是用戶付款金額（未扣 Apple 抽成）。</p></section>`;
+}
+
+/* ================= 版本與留存 (pushed hourly by each app, see integrations/usage-meow-work.sql) ================= */
+let USAGE_CHARTS = [];
+const vcmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let k = 0; k < Math.max(x.length, y.length); k++) if ((x[k] || 0) !== (y[k] || 0)) return (y[k] || 0) - (x[k] || 0); return 0; };
+const pctText = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '—';
+function usageHTML() {
+  USAGE_CHARTS = [];
+  return [...S.usage.entries()].filter(([p]) => S.products.has(p) && (UI.product === 'all' || UI.product === p)).map(([p, u]) => {
+    const name = UI.product === 'all' ? `・${esc(pName(p))}` : '';
+    // Versions: share of the iPhones that opened the App each day; the bars use the last full day.
+    const ios = (u.versions || []).filter(r => r.p === 'ios');
+    const days = [...new Set(ios.map(r => r.d))].sort().slice(-21);
+    const dayTot = d => ios.filter(r => r.d === d).reduce((a, r) => a + r.n, 0);
+    const full = days.filter(d => d < TODAY).pop() || days[days.length - 1];
+    const onFull = ios.filter(r => r.d === full).sort((a, b) => vcmp(a.v, b.v)), fullTot = dayTot(full);
+    const store = S.storeVersions?.[p];
+    const storeLine = store ? `App Store 現在是 <b>${esc(store.version)}</b>（${dayLabel(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(store.at))} 上架）` : '';
+    const todayRows = ios.filter(r => r.d === TODAY), todayTot = todayRows.reduce((a, r) => a + r.n, 0);
+    const storeNow = store && todayTot ? `，今天開 App 的 iPhone 有 <b>${pctText(todayRows.find(r => r.v === store.version)?.n || 0, todayTot)}</b> 已經是這版` : '';
+    const vMax = Math.max(1, ...onFull.map(r => r.n));
+    const bars = onFull.length ? `<div class="bars">${onFull.slice(0, 6).map(r => `<div class="bar"><span class="lab mono">${esc(r.v)}${store?.version === r.v ? ' ★' : ''}</span><div class="trk"><div class="fil" style="width:${(r.n / vMax * 100).toFixed(1)}%"></div></div><span class="val">${pctText(r.n, fullTot)}<small>${fmtN(r.n)} 人</small></span></div>`).join('')}</div>` : '<p class="hint">還沒有 iPhone 的開啟紀錄。</p>';
+    const top = [...new Set(ios.filter(r => days.includes(r.d)).map(r => r.v))].sort(vcmp)
+      .filter(v => days.some(d => (ios.find(r => r.d === d && r.v === v)?.n || 0) / (dayTot(d) || 1) >= 0.05)).slice(0, 5);
+    const id = 'c-ver-' + p.replace(/\W/g, '');
+    const series = top.map((v, i) => ({ name: v, color: SLOT(i), values: days.map(d => { const t = dayTot(d); return t ? (ios.find(r => r.d === d && r.v === v)?.n || 0) / t : null; }) }));
+    USAGE_CHARTS.push({ id, cfg: { labels: days.map(dayLabel), full: days.map(dayFull), fmt: 'pct', max: 1, height: 200, aria: '各版本使用比例', series } });
+    const andr = (u.versions || []).filter(r => r.p === 'android' && r.d === full), andrTot = andr.reduce((a, r) => a + r.n, 0);
+    const andrLine = andrTot ? `<p class="hint" style="margin:10px 0 0">Android（${dayLabel(full)}，${fmtN(andrTot)} 人）：${andr.sort((a, b) => b.n - a.n).slice(0, 4).map(r => `${esc(r.v)} ${pctText(r.n, andrTot)}`).join('・')}</p>` : '';
+    // Retention: of the installs first opened on a day, how many came back the next day / on day 7 / within the first week.
+    const coh = (u.cohorts || []).slice().reverse();
+    const avg = k => { const c = coh.filter(r => r[k] != null), n = c.reduce((a, r) => a + r.n, 0); return n ? pctText(c.reduce((a, r) => a + r[k], 0), n) : '—'; };
+    const cell = (r, k) => `<td class="n">${r[k] == null ? '<span class="hint">還沒到</span>' : `${pctText(r[k], r.n)}<small class="hint"> ${fmtN(r[k])}</small>`}</td>`;
+    const ret = coh.length ? `<div class="tw"><table class="t"><thead><tr><th>第一次開</th><th class="n">新用戶</th><th class="n">隔天回來</th><th class="n">第 7 天</th><th class="n">一週內回來</th></tr></thead>
+      <tbody><tr><td><b>平均</b></td><td class="n"><b>${fmtN(coh.reduce((a, r) => a + r.n, 0))}</b></td><td class="n"><b>${avg('d1')}</b></td><td class="n"><b>${avg('d7')}</b></td><td class="n"><b>${avg('w1')}</b></td></tr>
+      ${coh.slice(0, 10).map(r => `<tr><td>${dayLabel(r.d)}</td><td class="n">${fmtN(r.n)}</td>${cell(r, 'd1')}${cell(r, 'd7')}${cell(r, 'w1')}</tr>`).join('')}</tbody></table></div>` : '<p class="hint">還沒有足夠的開啟紀錄。</p>';
+    const t = u.trial || {};
+    const trial = t.started ? `<p class="hint" style="margin:10px 0 0">免費試用：開始 ${fmtN(t.started)}・轉成付費 ${fmtN(t.paid)}（${pctText(t.paid, t.started)}）・試用中 ${fmtN(t.running)}・沒付費就結束 ${fmtN(t.lapsed)}</p>` : '';
+    return `<section class="card span6"><header><h3>版本使用${name}<small>${full ? dayLabel(full) + ' 開 App 的 iPhone' : ''}</small></h3></header>
+        ${storeLine ? `<p class="hint" style="margin:0 0 12px">${storeLine}${storeNow}。★ 是商店上的版本。</p>` : ''}${bars}
+        ${series.length > 1 ? `<div style="margin-top:14px">${legendHTML(series)}</div><div class="chart" id="${id}"></div>` : ''}${andrLine}</section>
+      <section class="card span6"><header><h3>新用戶留存${name}<small>每小時更新・${minsAgo(u.at)}</small></h3></header>${ret}${trial}
+        <p class="hint" style="margin:10px 0 0">依「第一次開 App」的日子分組。開啟紀錄從 ${esc(u.since ? dayLabel(u.since) : '')} 開始，前 3 天跳過（那時出現的大多是本來就在用的人）。</p></section>`;
+  }).join('');
 }
 
 /* ================= view: issues ================= */
@@ -1305,7 +1379,7 @@ function updateIssues(type) {
   const all = [...S.issues.values()].filter(i => i.type === type && S.products.has(i.product) && (UI.product === 'all' || i.product === UI.product));
   const counts = { open: all.filter(i => isOpen(i.status)).length, all: all.length };
   stList.forEach(([k]) => counts[k] = all.filter(i => i.status === k).length);
-  $('#is-stats').innerHTML = [['open', '未結案'], ...stList.map(s => [s[0], s[1]]), ['all', '全部']].map(([k, l]) => `<span class="stat ${f.st === k ? 'on' : ''}" data-act="ist" data-id="${k}" data-type="${type}" role="button" tabindex="0"><b>${counts[k]}</b><span>${l}</span></span>`).join('');
+  $('#is-stats').innerHTML = [['open', '未結案'], ...stList.filter(s => type !== 'bug' || s[0] !== 'done').map(s => [s[0], s[1]]), ['all', '全部']].map(([k, l]) => `<span class="stat ${f.st === k ? 'on' : ''}" data-act="ist" data-id="${k}" data-type="${type}" role="button" tabindex="0"><b>${counts[k]}</b><span>${l}</span></span>`).join('');
   const q = f.q.trim().toLowerCase();
   let rows = all.filter(i => (f.st === 'all' || (f.st === 'open' ? isOpen(i.status) : i.status === f.st)) && (f.pri === 'all' || i.priority === f.pri) &&
     (!q || [i.title, i.desc, i.owner, i.version].some(s => String(s || '').toLowerCase().includes(q))));
@@ -1351,7 +1425,8 @@ function issueModal(type, id) {
       <label class="fld"><span>需求來源</span><input id="im-src" value="${esc(d.source || '')}" placeholder="例：App Store 評論、客服、內部"></label>` : ''}
     </div>
     ${it?.sentry?.url ? `<p class="hint">Sentry 自動回報・${fmtN(it.sentry.count)} 次・${fmtN(it.sentry.users)} 人受影響・最後發生 ${minsAgo(it.sentry.lastSeen)}　<a href="${esc(it.sentry.url)}" target="_blank" rel="noopener">在 Sentry 看詳情 ↗</a></p>` : ''}
-    ${it?.autoSolved && it.status === 'done' ? `<p class="hint">站長修好、${esc(it.autoSolved.version)} 版上架後沒再發生，${new Date(it.autoSolved.at).toLocaleDateString('zh-TW')} 自動標成已解決；之後再發生會自動回到「待處理」。</p>` : ''}
+    ${it?.reopened ? `<p class="hint">這筆 ${new Date(it.reopened.solvedAt || it.reopened.at).toLocaleDateString('zh-TW')} 解決過，${new Date(it.reopened.at).toLocaleDateString('zh-TW')} 又發生，自動回到「待處理」。</p>` : ''}
+    ${type === 'bug' && !ro ? '<p class="hint">標成「已解決」後這筆會從清單移除；Sentry 回報的錯誤之後再發生，會自動回到「待處理」。</p>' : ''}
     ${it?.sentry?.event ? sentryEventHTML(it.sentry.event) : ''}
     ${it && !ro ? stationHTML(it) : ''}
     <label class="fld"><span>${type === 'bug' ? '描述（重現步驟、預期與實際結果）' : '描述（使用情境、為什麼需要）'}</span><textarea id="im-desc" rows="5">${esc(d.desc)}</textarea></label>
@@ -1371,7 +1446,7 @@ function issueModal(type, id) {
       if (it?.sample) body.sample = true;
       if (it?.sentry) body.sentry = it.sentry;
       const station = S.issues.get(id)?.station; if (station) body.station = station;
-      const ok = await W(() => id ? serial('issues/' + id, () => db.doc('issues/' + id).set(body)) : db.collection('issues').add(body), '已儲存');
+      const ok = await W(() => id ? serial('issues/' + id, () => db.doc('issues/' + id).set(body)) : db.collection('issues').add(body), type === 'bug' && body.status === 'done' ? '已解決，從清單移除' : '已儲存');
       if (ok) closeModal();
     });
     armDelete($('#im-del', sheet), async () => { if (await W(() => db.doc('issues/' + id).delete(), '已刪除')) closeModal(); });
@@ -2056,7 +2131,7 @@ document.addEventListener('change', async e => {
   }
   if (t.dataset.act === 'status') {
     const id = t.dataset.id, it = S.issues.get(id); if (!it) return;
-    await W(() => serial('issues/' + id, () => db.doc('issues/' + id).update({ status: t.value, updatedAt: Date.now() })), `已改為「${stMeta(it.type, t.value)[1]}」`);
+    await W(() => serial('issues/' + id, () => db.doc('issues/' + id).update({ status: t.value, updatedAt: Date.now() })), it.type === 'bug' && t.value === 'done' ? '已解決，從清單移除' : `已改為「${stMeta(it.type, t.value)[1]}」`);
   }
 });
 document.addEventListener('click', async e => {

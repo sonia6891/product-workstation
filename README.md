@@ -16,11 +16,14 @@
 | 職缺體檢 | `job-check` | 新用戶（首次開啟建立的帳號），市場一律 TW | 目前免費；有效訂閱讀 `profiles.plan = 'pro'` |
 | 提醒喵 | 尚未接 | — | — |
 
-- 每個來源專案都只多了一個 `workstation` schema（`config`、`export_rows`、`push`）和兩個 cron 工作（`workstation-push-live`、`workstation-push-full`），只讀 App 的資料表，不改任何 App 資料。程式碼見 `integrations/`。
+- 每個來源專案都只多了一個 `workstation` schema（`config`、`export_rows`、`push`）和兩個 cron 工作（`workstation-push-live`、`workstation-push-full`；`meow-work` 另有每小時的 `workstation-push-usage`），只讀 App 的資料表，不改任何 App 資料。程式碼見 `integrations/`。
 - 每個產品有自己的推送金鑰：來源端存在 `workstation.config`（API 讀不到），工作站只存 SHA-256（`private.ingest_keys`）。
 - 自動同步會覆蓋下載、訂閱、營收；廣告花費不會被動到，請在「數據輸入」手動填。
 - 「退訂紀錄」頁：App Store 的關閉自動續訂、重新開啟、到期、退款、扣款失敗通知（`public.sub_events`，由 `public.ingest_events` 寫入），附第一次付費時間與已付金額。目前只有「喵的，又要上班了」有。
 - 營收依「設定」的幣別換算（`private.fx` 的固定匯率）。
+- 「版本使用」「新用戶留存」卡片（總覽）：`meow-work` 每小時用 `workstation.push_usage()`（cron `workstation-push-usage`，`integrations/usage-meow-work.sql`）把匿名的 App 開啟紀錄整理成各版本每天的使用人數、依第一次開 App 那天分組的隔天／第 7 天／一週內回來比例、免費試用轉付費，送到工作站的 `public.ingest_usage`（`integrations/usage.sql`），存成 `cfg/usage-meow-work`。開啟紀錄從 2026-11-02 開始，第 30 天留存要等 12 月才有。
+- 「廣告回本」卡片（總覽）：期間內廣告費、每次下載成本、每個新付費用戶成本、營收 ÷ 廣告費，以及每個新訂閱帶來的營收，依投廣告的市場列出，旁邊附沒投廣告的市場做比較。Meta 沒有給下載歸因，所以都是「整體平均」。
+- 改版標記：`sentry-sync` 每小時查一次 App Store 公開資料，有新版本就在總覽趨勢圖加一個 ◆「iOS x.y.z 上架」事件（產品要填 App Store ID）。刪掉的不會再加回來。
 - 暫停同步：在來源專案執行 `select cron.unschedule('workstation-push-live'); select cron.unschedule('workstation-push-full');`
 
 ## Sentry 自動回報（Bug 追蹤）
@@ -31,6 +34,7 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 - 新錯誤 → 新增一筆「待處理」Bug，優先級依等級與影響人數自動給（fatal → P0，error 且 ≥ 20 人 → P1，error → P2，其他 → P3），之後可以自己改。
 - 次數、影響人數、最後發生時間會持續更新；狀態、優先級、負責人以工作站上的設定為準。
 - 在 Sentry 標成已解決（或 90 天沒再發生）→ 這裡自動變「已解決」；標了已解決之後又再發生 → 自動回到「待處理」。
+- 標成「已解決」的 Bug 會從清單移除：資料庫觸發器把它搬到 `solved`（`integrations/solved.sql`，網頁不顯示）。Sentry 的錯誤之後又發生，會帶著原本的紀錄自動回到「待處理」。要手動救回一筆，見 `solved.sql` 開頭的說明。
 - 站長修好的也會自動變「已解決」：站長回報修好（修正已經在 main 上，或它的 PR 已合併），App Store 上已經有比出錯那版更新的版本（用 Apple 公開查詢，產品要填 App Store ID），而且新版上架後沒再發生。Bug 視窗會寫是哪一版上架後自動標的。
 - 目前來源（org `sole-proprietorship-jo`）：喵的，又要上班了（project `meow-work-app`）、提醒喵（project `remindcat`）。職缺體檢還沒裝 Sentry。要加其他 App，在函式的 `SOURCES` 加一行。
 
@@ -60,6 +64,15 @@ Edge function `station-sync`（原始碼 `integrations/station-sync/index.ts`）
 - 直接交給站長的：超過 4 小時沒回報 → 「出錯了」、Bug 回到「待處理」。有 Supabase secret `STATION_GITHUB_TOKEN` 時，還會跟著站長推的分支看 PR：開了 → 「已開 PR，等你合併」，合併 → 「已合併，等你驗證」（Bug 變「待驗證」）。
 - 以前用 GitHub issue 交出的那幾筆，有權杖時照舊從 issue 讀進度。App 倉庫裡的 GitHub Actions（`.github/workflows/claude.yml`，在 issue 留言 `@claude`）也還在，可以繼續用。
 - `STATION_GITHUB_TOKEN`：GitHub → Settings → Developer settings → Fine-grained tokens，Repository access 選 `meow-work-app`、`RemindCat`，權限只給 Issues、Pull requests 的 **Read-only**。暫停：`select cron.unschedule('station-sync');`
+
+## LINE 日報與異常通知
+
+Edge function `alerts`（原始碼 `integrations/alerts/index.ts`）每 15 分鐘由 pg_cron 呼叫（`integrations/alerts.sql`），用跟串文雷達同一個 LINE 官方帳號推播給擁有者：
+
+- 每日日報：每天 9 點後送一次，昨天每個產品的下載、新訂閱、營收、廣告費、關閉續訂、未結案 Bug，跟前 7 天平均比較；掉很多或暴衝會加 ⚠。
+- 異常通知（8 點到 23 點，半夜發生的早上 8 點再送）：新的 P0 Bug、修好又發生的 Bug、今天廣告費已經超過平常兩倍、同步停了（App 數字 30 分鐘、Sentry 2 小時、Meta 3 小時沒成功）。每件只通知一次，同一輪的合併成一則。
+- 用到 Supabase secret `LINE_CHANNEL_ACCESS_TOKEN` 和 `threads_config.line_user_id`（串文雷達已經設好），呼叫時要帶 `threads_config.cron_secret`。LINE 免費方案每月 200 則推播，跟串文雷達共用。
+- 送過什麼記在 `cfg/alerts`。暫停：`select cron.unschedule('alerts');`
 
 ## 外觀
 
