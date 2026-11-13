@@ -31,6 +31,7 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 - 新錯誤 → 新增一筆「待處理」Bug，優先級依等級與影響人數自動給（fatal → P0，error 且 ≥ 20 人 → P1，error → P2，其他 → P3），之後可以自己改。
 - 次數、影響人數、最後發生時間會持續更新；狀態、優先級、負責人以工作站上的設定為準。
 - 在 Sentry 標成已解決（或 90 天沒再發生）→ 這裡自動變「已解決」；標了已解決之後又再發生 → 自動回到「待處理」。
+- 站長修好的也會自動變「已解決」：站長回報修好（修正已經在 main 上，或它的 PR 已合併），App Store 上已經有比出錯那版更新的版本（用 Apple 公開查詢，產品要填 App Store ID），而且新版上架後沒再發生。Bug 視窗會寫是哪一版上架後自動標的。
 - 目前來源（org `sole-proprietorship-jo`）：喵的，又要上班了（project `meow-work-app`）、提醒喵（project `remindcat`）。職缺體檢還沒裝 Sentry。要加其他 App，在函式的 `SOURCES` 加一行。
 
 需要 Supabase secret `SENTRY_AUTH_TOKEN`（Sentry → Settings → Auth Tokens，只勾 Read 權限）。沒有權杖時 Bug 追蹤頁會顯示「尚未啟用」。暫停同步：`select cron.unschedule('sentry-sync');`
@@ -42,7 +43,7 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 - 站長是 claude.ai 上的雲端排程任務「站長（產品工作站）」（`trig_01DCZDusxqi6hevT241db7g4`，claude.ai/code/routines），掛了 `meow-work-app` 和 `RemindCat` 兩個倉庫，模型 Opus 5.5。任務的說明原文在 `integrations/station/routine-prompt.md`；要改請在 claude.ai 上改，再同步回這個檔案。
 - 按下去時，edge function `station`（原始碼 `integrations/station/index.ts`）確認你是擁有者或編輯者，把標題、描述、Sentry 錯誤細節整理成資料，透過任務的 API 觸發叫醒站長。同一筆還在處理中（3 小時內）再按，要按兩次才會重來。
 - 站長讀程式、找原因、修好後推到 `claude/pws-…` 分支，不動 main、不合併、不開 GitHub issue。iOS 程式在雲端無法編譯，它會在回報裡寫出要你用 Xcode 試什麼。
-- 進度與回報（原因、改了什麼、怎麼驗證、沒測到的部分）由站長自己寫回這筆：處理中 2/5 → 做完了 → 有「開 PR ↗」可以按。每次交出都會產生一把只對這一筆有效的回報鑰匙，工作站只存它的雜湊。
+- 進度與回報（原因、改了什麼、怎麼驗證、沒測到的部分）由站長自己寫回這筆：處理中 2/5 → 做完了 → 有「開 PR ↗」可以按。修正本來就在 main 上（沒推分支）的 Bug 會直接變「待驗證」；有分支的等 PR 合併才變。每次交出都會產生一把只對這一筆有效的回報鑰匙，工作站只存它的雜湊。
 - 站長用的是 Claude 訂閱額度，跟平常用 Claude Code 算在一起。API 觸發每小時最多 30 次。
 - 產品對應的倉庫寫在 `index.html` 和 `integrations/station/index.ts` 的 `STATION_REPO`（兩邊要一致）；產品也可以有自己的 `repo` 欄位。沒有對應倉庫的產品不會出現這個按鈕。
 

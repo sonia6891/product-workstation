@@ -122,9 +122,12 @@ async function report(body: Record<string, any>) {
     next.branch = body.branch;
     next.prCreate = `https://github.com/${st.repo}/compare/${encodeURIComponent(body.branch).replace(/%2F/g, '/')}?expand=1`;
   }
-  // A bug follows 站長: working → 處理中, failed → back to 待處理. 待驗證／已解決／不處理 that the owner set are left alone.
+  // A bug follows 站長: working → 處理中, failed → back to 待處理, done without a branch (the fix is already on main)
+  // → 待驗證; with a branch it stays 處理中 until station-sync sees the PR merged. sentry-sync then marks it 已解決 once a
+  // newer App Store version is out and the error hasn't come back. 待驗證／已解決／不處理 that the owner set are left alone.
   let status = it.status;
-  if (it.type === 'bug' && (status === 'new' || status === 'doing')) status = stage === 'failed' ? 'new' : 'doing';
+  if (it.type === 'bug' && (status === 'new' || status === 'doing'))
+    status = stage === 'failed' ? 'new' : stage === 'reported' && !next.branch ? 'verify' : 'doing';
   await saveIssue(id, { ...it, station: next, status, updatedAt: Date.now() }, 'station');
   return json({ ok: true });
 }

@@ -1345,6 +1345,7 @@ function issueModal(type, id) {
       <label class="fld"><span>需求來源</span><input id="im-src" value="${esc(d.source || '')}" placeholder="例：App Store 評論、客服、內部"></label>` : ''}
     </div>
     ${it?.sentry?.url ? `<p class="hint">Sentry 自動回報・${fmtN(it.sentry.count)} 次・${fmtN(it.sentry.users)} 人受影響・最後發生 ${minsAgo(it.sentry.lastSeen)}　<a href="${esc(it.sentry.url)}" target="_blank" rel="noopener">在 Sentry 看詳情 ↗</a></p>` : ''}
+    ${it?.autoSolved && it.status === 'done' ? `<p class="hint">站長修好、${esc(it.autoSolved.version)} 版上架後沒再發生，${new Date(it.autoSolved.at).toLocaleDateString('zh-TW')} 自動標成已解決；之後再發生會自動回到「待處理」。</p>` : ''}
     ${it?.sentry?.event ? sentryEventHTML(it.sentry.event) : ''}
     ${it && !ro ? stationHTML(it) : ''}
     <label class="fld"><span>${type === 'bug' ? '描述（重現步驟、預期與實際結果）' : '描述（使用情境、為什麼需要）'}</span><textarea id="im-desc" rows="5">${esc(d.desc)}</textarea></label>
