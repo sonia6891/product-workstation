@@ -21,8 +21,11 @@
 - 自動同步會覆蓋下載、訂閱、營收；廣告花費不會被動到，請在「數據輸入」手動填。
 - 「退訂紀錄」頁：App Store 的關閉自動續訂、重新開啟、到期、退款、扣款失敗通知（`public.sub_events`，由 `public.ingest_events` 寫入），附第一次付費時間與已付金額。目前只有「喵的，又要上班了」有。
 - 營收依「設定」的幣別換算（`private.fx` 的固定匯率）。
-- 「版本使用」「新用戶留存」卡片（總覽）：`meow-work` 每小時用 `workstation.push_usage()`（cron `workstation-push-usage`，`integrations/usage-meow-work.sql`）把匿名的 App 開啟紀錄整理成各版本每天的使用人數、依第一次開 App 那天分組的隔天／第 7 天／一週內回來比例、免費試用轉付費，送到工作站的 `public.ingest_usage`（`integrations/usage.sql`），存成 `cfg/usage-meow-work`。開啟紀錄從 2026-11-02 開始，第 30 天留存要等 12 月才有。
-- 「廣告回本」卡片（總覽）：期間內廣告費、每次下載成本、每個新付費用戶成本、營收 ÷ 廣告費，以及每個新訂閱帶來的營收，依投廣告的市場列出，旁邊附沒投廣告的市場做比較。Meta 沒有給下載歸因，所以都是「整體平均」。
+- 「版本使用」「新用戶留存」卡片（總覽）：`meow-work` 每小時用 `workstation.push_usage()`（cron `workstation-push-usage`，`integrations/usage-meow-work.sql`）把匿名的 App 開啟紀錄整理成各版本每天的使用人數、依第一次開 App 那天分組的隔天／第 7 天／一週內回來比例、免費試用轉付費，送到工作站的 `public.ingest_usage`（`integrations/usage.sql`），存成 `cfg/usage-meow-work`。留存另外依「第一次開的版本」分組（`vcoh`，20 人以上的版本），用來看改版有沒有讓新用戶更願意回來。開啟紀錄從 2026-11-02 開始，第 30 天留存要等 12 月才有。
+- 「廣告回本」卡片（總覽）：期間內廣告費、每次下載成本、每個新付費用戶成本、營收 ÷ 廣告費，以及每個新訂閱實拿的錢（營收先扣商店抽成，預設 15%，在「設定 → 幣別與市場」改；退款的交易來源就不算進營收），依投廣告的市場列出，旁邊附沒投廣告的市場做比較。Meta 沒有給下載歸因，所以都是「整體平均」。
+- 「今天要注意的事」（總覽最上面）：跟 LINE 日報同一套檢查，在網頁上算：昨天對比前 7 天平均、P0 Bug、修好又發生的 Bug、最近 7 天的 1–2 星評論、目前期間廣告沒回本、新版留存比上一版低、各項同步停了。廣告回本、版本使用、新用戶留存、App Store 評論、各市場成效、各產品成效預設收合，被點名的會自己展開；手動展開／收合的選擇記在那台裝置上。
+- 「App Store 評論」卡片（總覽）：`alerts` 每小時讀 Apple 公開的評論（每個產品 × 「設定」裡的每個市場，產品要填 App Store ID），存成 `cfg/reviews`（每個產品最新 40 則，加台灣商店的平均評分）。
+- 狀態是「開發中」而且還沒有任何數字的產品，不會出現在「各產品成效」和日報；有數字之後自動出現。
 - 改版標記：`sentry-sync` 每小時查一次 App Store 公開資料，有新版本就在總覽趨勢圖加一個 ◆「iOS x.y.z 上架」事件（產品要填 App Store ID）。刪掉的不會再加回來。
 - 暫停同步：在來源專案執行 `select cron.unschedule('workstation-push-live'); select cron.unschedule('workstation-push-full');`
 
@@ -71,8 +74,11 @@ Edge function `alerts`（原始碼 `integrations/alerts/index.ts`）每 15 分�
 
 - 每日日報：每天 9 點後送一次，昨天每個產品的下載、新訂閱、營收、廣告費、關閉續訂、未結案 Bug，跟前 7 天平均比較；掉很多或暴衝會加 ⚠。
 - 異常通知（8 點到 23 點，半夜發生的早上 8 點再送）：新的 P0 Bug、修好又發生的 Bug、今天廣告費已經超過平常兩倍、同步停了（App 數字 30 分鐘、Sentry 2 小時、Meta 3 小時沒成功）。每件只通知一次，同一輪的合併成一則。
+- 每週回顧：週一 9 點後送一次，上週（一到日）對比前一週：下載、新訂閱、營收、廣告費、每個新付費用戶成本、關閉續訂、新用戶隔天回來比例、新 Bug／修好幾個、評論。
+- App Store 評論：新的 1–2 星評論（3 天內）會通知一次；日報也會列昨天的新評論數。
+- 只推給擁有者一個人（LINE 的單一對象推播），加官方帳號好友的其他人不會收到。
 - 用到 Supabase secret `LINE_CHANNEL_ACCESS_TOKEN` 和 `threads_config.line_user_id`（串文雷達已經設好），呼叫時要帶 `threads_config.cron_secret`。LINE 免費方案每月 200 則推播，跟串文雷達共用。
-- 送過什麼記在 `cfg/alerts`。暫停：`select cron.unschedule('alerts');`
+- 送過什麼記在 `cfg/alerts`。不送只看內容：呼叫時網址加 `?dry=1`。暫停：`select cron.unschedule('alerts');`
 
 ## 外觀
 
