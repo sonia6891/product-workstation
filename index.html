@@ -1428,12 +1428,18 @@ function usageHTML() {
     const byVer = vc.length ? `<h4>依第一次開的版本</h4><div class="tw"><table class="t"><thead><tr><th>版本</th><th class="n">新用戶</th><th class="n">隔天回來</th><th class="n">第 7 天</th><th class="n">一週內回來</th></tr></thead>
       <tbody>${vc.map(r => `<tr><td class="mono">${esc(r.v)}${store?.version === r.v ? ' ★' : ''}</td><td class="n">${fmtN(r.n)}</td>${vcell(r.d1, r.n1)}${vcell(r.d7, r.n7)}${vcell(r.w1, r.n7)}</tr>`).join('')}</tbody></table></div>
       <p class="hint" style="margin:8px 0 0">看改版有沒有讓新用戶更願意回來：拿最新兩版互相比。比例後面是「回來的人／已經滿天數的人」。舊版裡混了本來就在用、紀錄開始後才第一次被看到的人，數字會偏高或偏低。</p>` : '';
+    // Auto-renewal turned off, by the version the account had last reported then (integrations/usage-meow-work.sql, vcancel).
+    const vx = (u.vcancel || []).slice().sort((a, b) => !a.v - !b.v || a.p.localeCompare(b.p) * -1 || vcmp(a.v, b.v));
+    const vxAll = vx.reduce((a, r) => a + r.n, 0), vxKnown = vx.reduce((a, r) => a + (r.v ? r.n : 0), 0);
+    const offByVer = vxAll ? `<h4>關閉自動續訂的人用哪一版</h4><div class="tw"><table class="t"><thead><tr><th>版本</th><th class="n">最近 30 天</th><th class="n">累計</th></tr></thead>
+      <tbody>${vx.map(r => `<tr><td class="mono">${r.p === 'android' ? 'Android ' : ''}${r.v ? esc(r.v) + (store?.version === r.v ? ' ★' : '') : '<span class="hint">不明</span>'}</td><td class="n">${fmtN(r.n30)}</td><td class="n">${fmtN(r.n)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="hint" style="margin:8px 0 0">版本是對方關閉續訂當下、帳號最後回報的那一版；一份訂閱只算一次。目前知道版本的有 ${fmtN(vxKnown)}／${fmtN(vxAll)}：「不明」是 App 還沒更新到會回報版本的那一版，或對方關了使用統計。</p>` : '';
     const t = u.trial || {};
     const trial = t.started ? `<p class="hint" style="margin:10px 0 0">免費試用：開始 ${fmtN(t.started)}・轉成付費 ${fmtN(t.paid)}（${pctText(t.paid, t.started)}）・試用中 ${fmtN(t.running)}・沒付費就結束 ${fmtN(t.lapsed)}</p>` : '';
     return `<section class="card span6${foldCls('ver')}" id="card-ver"><header><h3>版本使用${name}<small>${full ? dayLabel(full) + ' 開 App 的 iPhone' : ''}</small></h3>${foldBtn('ver')}</header>
         ${storeLine ? `<p class="hint" style="margin:0 0 12px">${storeLine}${storeNow}。★ 是商店上的版本。</p>` : ''}${bars}
         ${series.length > 1 ? `<div style="margin-top:14px">${legendHTML(series)}</div><div class="chart" id="${id}"></div>` : ''}${andrLine}</section>
-      <section class="card span6${foldCls('ret')}" id="card-ret"><header><h3>新用戶留存${name}<small>每小時更新・${minsAgo(u.at)}</small></h3>${foldBtn('ret')}</header>${ret}${byVer}${trial}
+      <section class="card span6${foldCls('ret')}" id="card-ret"><header><h3>新用戶留存${name}<small>每小時更新・${minsAgo(u.at)}</small></h3>${foldBtn('ret')}</header>${ret}${byVer}${offByVer}${trial}
         <p class="hint" style="margin:10px 0 0">依「第一次開 App」的日子分組。開啟紀錄從 ${esc(u.since ? dayLabel(u.since) : '')} 開始，前 3 天跳過（那時出現的大多是本來就在用的人）。</p></section>`;
   }).join('');
 }

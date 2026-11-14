@@ -10,6 +10,10 @@
 --   vcoh: the same three numbers per version an install first opened (20 installs or more). n1 / n7 = how many of
 --         them are old enough for d1 / d7 and w1. Old versions also hold people who already had the App and were
 --         first seen after the log began, so compare the newest versions with each other.
+--   vcancel: subscriptions whose auto-renewal was turned off, by the app version the account had last reported when
+--            the store said so (store_subscription_events.app_version, filled since 2026-11-14; '' = not known: an
+--            app too old to report it, or 使用統計 off). One row per subscription, its latest turn-off. n30 = of
+--            those, the ones in the last 30 days.
 --   trial: free trials started, how many turned into a payment, are still running, or ended without paying.
 create or replace function workstation.export_usage() returns jsonb
 language sql stable set search_path = '' as $fn$
@@ -52,7 +56,16 @@ tx as (
     to_timestamp(nullif(tr->>'expiresDate', '')::numeric / 1000) ed
   from ev where tr ? 'transactionId' order by tr->>'transactionId', created_at
 ),
-tr as (select otid, bool_or(paid) paid, max(ed) filter (where trial) ted from tx group by otid having bool_or(trial))
+tr as (select otid, bool_or(paid) paid, max(ed) filter (where trial) ted from tx group by otid having bool_or(trial)),
+off as (
+  select distinct on (e.platform, coalesce(case when e.platform = 'google_play' then e.transaction_id end, e.original_transaction_id, e.event_id))
+    case when e.platform = 'google_play' then 'android' else 'ios' end p, coalesce(e.app_version, '') v, coalesce(e.signed_at, e.created_at) at
+  from public.store_subscription_events e
+  where upper(e.environment) = 'PRODUCTION'
+    and ((e.event_type = 'DID_CHANGE_RENEWAL_STATUS' and e.subtype = 'AUTO_RENEW_DISABLED') or e.event_type = 'RTDN_3')
+  order by e.platform, coalesce(case when e.platform = 'google_play' then e.transaction_id end, e.original_transaction_id, e.event_id), coalesce(e.signed_at, e.created_at) desc
+),
+vcancel as (select p, v, count(*) n, count(*) filter (where at > now() - interval '30 days') n30 from off group by 1, 2)
 select jsonb_build_object(
   'at', (extract(epoch from now()) * 1000)::bigint,
   'since', (select since from t),
@@ -60,6 +73,7 @@ select jsonb_build_object(
   'first_seen', coalesce((select jsonb_object_agg(p || ' ' || v, first) from fs), '{}'::jsonb),
   'cohorts', coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('d', d, 'n', n, 'd1', d1, 'd7', d7, 'w1', w1)) order by d) from coh), '[]'::jsonb),
   'vcoh', coalesce((select jsonb_agg(jsonb_build_object('p', p, 'v', v, 'n', n, 'n1', n1, 'd1', d1, 'n7', n7, 'd7', d7, 'w1', w1) order by p, v) from vcoh), '[]'::jsonb),
+  'vcancel', coalesce((select jsonb_agg(jsonb_build_object('p', p, 'v', v, 'n', n, 'n30', n30) order by p, v) from vcancel), '[]'::jsonb),
   'trial', (select jsonb_build_object('started', count(*), 'paid', count(*) filter (where paid),
      'running', count(*) filter (where not paid and ted > now()), 'lapsed', count(*) filter (where not paid and (ted is null or ted <= now()))) from tr)
 )

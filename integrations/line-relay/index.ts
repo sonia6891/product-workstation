@@ -1,8 +1,10 @@
 // Edge function `line-relay` (workstation project): sends a LINE message to the owner from the official account
 // 產品工作站, for a source app that has no token of its own. 喵的，又要上班了 hands its hourly 變動通知 here
 // (its edge function line-push), so the owner's reports all arrive in one LINE account and the token lives in one place.
-// POST { key, product, text, flex? }: `key` is the app's push key (the one ingest_metrics takes, checked by
+// POST { key, product, text, flex?, retry_key? }: `key` is the app's push key (the one ingest_metrics takes, checked by
 // public.check_ingest_key). With `flex` the card is sent first; if LINE rejects it, `text` goes out instead.
+// `retry_key` (a UUID) is passed to LINE as X-Line-Retry-Key: LINE delivers one message per key and answers 409 to a
+// repeat, so a caller that may report the same event twice (a store notification and its retry) reaches the owner once.
 // Needs the secret WORKSTATION_LINE_TOKEN; the recipient is threads_config.line_user_id_workstation.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
@@ -21,11 +23,15 @@ Deno.serve(async (req: Request) => {
   const to = String(data?.value || '').trim();
   if (!token || !/^U[0-9a-f]{32}$/.test(to)) return json({ ok: false, error: 'not_configured' }, 503);
 
-  const send = async (messages: unknown[]) => (await fetch('https://api.line.me/v2/bot/message/push', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Line-Retry-Key': crypto.randomUUID() },
-    body: JSON.stringify({ to, messages }),
-  })).status;
+  const retryKey = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(body.retry_key ?? '')) ? String(body.retry_key) : '';
+  const send = async (messages: unknown[]) => {
+    const status = (await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Line-Retry-Key': retryKey || crypto.randomUUID() },
+      body: JSON.stringify({ to, messages }),
+    })).status;
+    return retryKey && status === 409 ? 200 : status; // 409 = LINE already delivered this key
+  };
   const plain = [{ type: 'text', text: text.slice(0, 4900) }];
   let format = 'text', status = 0;
   if (body.flex && typeof body.flex === 'object') {
