@@ -39,7 +39,7 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 - 在 Sentry 標成已解決（或 90 天沒再發生）→ 這裡自動變「已解決」；標了已解決之後又再發生 → 自動回到「待處理」。
 - 標成「已解決」的 Bug 會從清單移除：資料庫觸發器把它搬到 `solved`（`integrations/solved.sql`，網頁不顯示）。Sentry 的錯誤之後又發生，會帶著原本的紀錄自動回到「待處理」。要手動救回一筆，見 `solved.sql` 開頭的說明。
 - 站長修好的也會自動變「已解決」：站長回報修好（修正已經在 main 上，或它的 PR 已合併），App Store 上已經有比出錯那版更新的版本（用 Apple 公開查詢，產品要填 App Store ID），而且新版上架後沒再發生。Bug 視窗會寫是哪一版上架後自動標的。
-- 目前來源（org `sole-proprietorship-jo`）：喵的，又要上班了（project `meow-work-app`）、提醒喵（project `remindcat`）。職缺體檢還沒裝 Sentry。要加其他 App，在函式的 `SOURCES` 加一行。
+- 目前來源（org `sole-proprietorship-jo`）：喵的，又要上班了（project `meow-work-app`）、提醒喵（project `remindcat`）、職缺體檢（project `job-check`，App 要出含 Sentry 的新版才會有資料）。要加其他 App，在函式的 `SOURCES` 加一行。
 
 需要 Supabase secret `SENTRY_AUTH_TOKEN`（Sentry → Settings → Auth Tokens，只勾 Read 權限）。沒有權杖時 Bug 追蹤頁會顯示「尚未啟用」。暫停同步：`select cron.unschedule('sentry-sync');`
 
