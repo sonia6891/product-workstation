@@ -137,8 +137,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-right: 1.25px solid var(--card-line); background: var(--panel);
 }
 .brand { display: flex; gap: 10px; align-items: center; padding: 0 6px; }
-.brand .mark { width: 30px; height: 30px; border-radius: 9px; background: var(--leather); box-shadow: 0 2px 0 rgba(59,36,23,.25); display: grid; grid-template-columns: repeat(3, 4px); gap: 3px; align-items: end; justify-content: center; padding-bottom: 8px; flex: none; }
-.brand .mark i { display: block; width: 4px; background: var(--panel); border-radius: 1px; }
+/* Same picture as the home-screen icon (icon.svg), without the stitching: at this size it would only be noise. */
+.brand .mark { width: 34px; height: 34px; border-radius: 10px; box-shadow: 0 2px 0 rgba(59,36,23,.25); display: block; flex: none; }
 .brand b { display: block; font-size: 15px; letter-spacing: .02em; }
 .brand small { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 .brand small::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
@@ -523,7 +523,7 @@ try {
 
 <div id="auth" class="auth" hidden>
   <div class="auth-card">
-    <div class="brand"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:11px"></i><i style="height:15px"></i></span><div><b>產品工作站</b></div></div>
+    <div class="brand"><svg class="mark" aria-hidden="true" viewBox="0 0 512 512"><rect width="512" height="512" fill="#6b4a36"/><g transform="translate(256 258) scale(1.12) translate(-256 -248)"><rect x="112" y="282" width="78" height="118" rx="16" fill="#f6eee1"/><rect x="217" y="210" width="78" height="190" rx="16" fill="#f6eee1"/><path d="M326 100 L358 128 H364 L396 100 V380 a16 16 0 0 1 -16 16 H342 a16 16 0 0 1 -16 -16 Z" fill="#f2b84b" stroke="#f2b84b" stroke-width="8" stroke-linejoin="round"/><circle cx="345" cy="178" r="9" fill="#4a2a1a"/><circle cx="377" cy="178" r="9" fill="#4a2a1a"/></g></svg><div><b>產品工作站</b></div></div>
     <div><h1 id="auth-title">登入</h1><p class="hint" id="auth-sub" style="margin-top:4px"></p></div>
     <form id="auth-form" novalidate>
       <label class="fld" id="af-email-wrap"><span>Email</span><input id="af-email" type="email" autocomplete="email" inputmode="email"></label>
@@ -537,7 +537,7 @@ try {
 
 <div class="app" hidden>
   <aside class="side">
-    <div class="brand"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:11px"></i><i style="height:15px"></i></span><div><b>產品工作站</b><small id="sync">連線中…</small></div></div>
+    <div class="brand"><svg class="mark" aria-hidden="true" viewBox="0 0 512 512"><rect width="512" height="512" fill="#6b4a36"/><g transform="translate(256 258) scale(1.12) translate(-256 -248)"><rect x="112" y="282" width="78" height="118" rx="16" fill="#f6eee1"/><rect x="217" y="210" width="78" height="190" rx="16" fill="#f6eee1"/><path d="M326 100 L358 128 H364 L396 100 V380 a16 16 0 0 1 -16 16 H342 a16 16 0 0 1 -16 -16 Z" fill="#f2b84b" stroke="#f2b84b" stroke-width="8" stroke-linejoin="round"/><circle cx="345" cy="178" r="9" fill="#4a2a1a"/><circle cx="377" cy="178" r="9" fill="#4a2a1a"/></g></svg><div><b>產品工作站</b><small id="sync">連線中…</small></div></div>
     <nav class="nav" aria-label="主選單">
       <a href="#overview" data-v="overview" data-s="總覽"><svg viewBox="0 0 24 24"><path d="M4 20V13M10 20V8M16 20V4M2 20h20"/></svg>總覽</a>
       <a href="#data" data-v="data" data-s="數據" class="nav-x"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>數據輸入</a>
