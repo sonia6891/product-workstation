@@ -14,7 +14,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
-const SITE = 'https://sonia6891.github.io/product-workstation/';
+// openExternalBrowser=1: LINE then opens the link in the phone's own browser (where the owner is signed in), not in
+// LINE's built-in one, which has no saved sign-in and asks for the password every time.
+const SITE = 'https://sonia6891.github.io/product-workstation/?openExternalBrowser=1';
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 const HOUR = 3_600_000, DAY = 86_400_000;
 
@@ -25,19 +27,33 @@ const WEEK = '日一二三四五六';
 const dayLabel = (d: string) => `${+d.slice(5, 7)}/${+d.slice(8)}（${WEEK[new Date(d + 'T00:00:00Z').getUTCDay()]}）`;
 const adSum = (a: unknown) => a && typeof a === 'object' ? Object.values(a as Record<string, unknown>).reduce((s: number, v) => s + (Number(v) || 0), 0) : Number(a) || 0;
 
+// Which LINE bot sends. The workstation's own official account when its token is set (secret WORKSTATION_LINE_TOKEN;
+// the owner's user ID for it is threads_config.line_user_id_workstation, or the secret WORKSTATION_LINE_USER_ID: the
+// account 產品工作站 has its own provider, and LINE user IDs are per provider). Until then, and whenever the own account refuses the push
+// (not added as a friend yet, wrong ID), the bot shared with 串文雷達 sends, so a report is never lost.
+let lineVia = '';
 async function linePush(text: string) {
-  const token = (Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') || '').trim();
-  if (!token) throw new Error('no_line_token');
-  const { data } = await sb.from('threads_config').select('value').eq('key', 'line_user_id').maybeSingle();
+  const env = (k: string) => (Deno.env.get(k) || '').trim();
+  const { data: ids } = await sb.from('threads_config').select('key,value').in('key', ['line_user_id', 'line_user_id_workstation']);
+  const cfgId = (k: string) => String((ids || []).find(r => r.key === k)?.value || '').trim();
   const ok = (s: string) => /^U[0-9a-f]{32}$/.test(s);
-  const to = [String(data?.value || '').trim(), (Deno.env.get('LINE_USER_ID') || '').trim()].find(ok);
-  if (!to) throw new Error('no_line_user');
-  const r = await fetch('https://api.line.me/v2/bot/message/push', {
+  const shared = [cfgId('line_user_id'), env('LINE_USER_ID')].find(ok);
+  const send = async (token: string, to: string) => (await fetch('https://api.line.me/v2/bot/message/push', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Line-Retry-Key': crypto.randomUUID() },
     body: JSON.stringify({ to, messages: [{ type: 'text', text: text.slice(0, 4900) }] }),
-  });
-  if (!r.ok) throw new Error(`line_${r.status}`);
+  })).status;
+  const own = env('WORKSTATION_LINE_TOKEN'), ownTo = [env('WORKSTATION_LINE_USER_ID'), cfgId('line_user_id_workstation'), shared].find(s => s && ok(s));
+  if (own && ownTo) {
+    const s = await send(own, ownTo).catch(() => 0);
+    if (s >= 200 && s < 300) { lineVia = 'workstation'; return; }
+    lineVia = `shared (own account: ${s})`;
+  } else lineVia = 'shared';
+  const token = env('LINE_CHANNEL_ACCESS_TOKEN');
+  if (!token) throw new Error('no_line_token');
+  if (!shared) throw new Error('no_line_user');
+  const s = await send(token, shared);
+  if (s < 200 || s >= 300) throw new Error(`line_${s}`);
 }
 
 type Cell = { dl: number; sub: number; rev: number; ad: number };
@@ -233,6 +249,7 @@ Deno.serve(async (req: Request) => {
       if (m.weekly) st.lastWeekly = monday;
     }
     out.sent = msgs.length;
+    if (msgs.length) out.via = lineVia;
     out.log = [...msgs.map(m => ({ at: Date.now(), text: m.text.slice(0, 300) })), ...(st.log || [])].slice(0, 10);
   } catch (e) {
     out.ok = false; out.error = String((e as Error)?.message || e);

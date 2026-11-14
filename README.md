@@ -78,6 +78,7 @@ Edge function `alerts`（原始碼 `integrations/alerts/index.ts`）每 15 分�
 - App Store 評論：新的 1–2 星評論（3 天內）會通知一次；日報也會列昨天的新評論數。
 - 只推給擁有者一個人（LINE 的單一對象推播），加官方帳號好友的其他人不會收到。
 - 用到 Supabase secret `LINE_CHANNEL_ACCESS_TOKEN` 和 `threads_config.line_user_id`（串文雷達已經設好），呼叫時要帶 `threads_config.cron_secret`。LINE 免費方案每月 200 則推播，跟串文雷達共用。
+- 工作站專用的 LINE 官方帳號（選用）：放進 Supabase secret `WORKSTATION_LINE_TOKEN`（那個帳號的 Messaging API channel access token）之後，日報、週報、通知都改由它發，額度也跟串文雷達分開。新帳號要建在跟串文雷達同一個 Provider 底下（LINE 的使用者 ID 每個 Provider 不同；不同的話另外放 `WORKSTATION_LINE_USER_ID`），而且擁有者要先加它好友。新帳號發不出去時（還沒加好友、ID 不對）會自動改用原本的帳號發，`cfg/alerts` 的 `via` 會寫是哪一個帳號發的。
 - 送過什麼記在 `cfg/alerts`。不送只看內容：呼叫時網址加 `?dry=1`。暫停：`select cron.unschedule('alerts');`
 
 ## 外觀
