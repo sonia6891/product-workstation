@@ -73,8 +73,10 @@ const stable = (v: unknown): unknown => Array.isArray(v) ? v.map(stable)
   : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map(k => [k, stable((v as any)[k])])) : v;
 const same = (a: unknown, b: unknown) => JSON.stringify(stable(a)) === JSON.stringify(stable(b));
 
+// 緊急 (P0) only when a crash or freeze reached several people. Sentry calls every "the app was killed" event
+// fatal, also the ones it only guesses at (watchdog, app hang), so one or two people hitting it once is P1.
 function priority(i: { level: string; userCount: number }) {
-  if (i.level === 'fatal') return 'P0';
+  if (i.level === 'fatal') return i.userCount >= 5 ? 'P0' : 'P1';
   if (i.level === 'error') return i.userCount >= 20 ? 'P1' : 'P2';
   return 'P3';
 }
@@ -142,6 +144,8 @@ Deno.serve(async () => {
         if (!regressed && !fixed && same(old.sentry, sentry) && old.title === i.title) continue;
         const next: Record<string, any> = { ...old, title: i.title, sentry, status: regressed ? 'new' : fixed ? 'done' : old.status,
           updatedAt: regressed || fixed ? Date.now() : Math.max(old.updatedAt || 0, sentry.lastSeen) };
+        // More people hit it since → the priority goes up with it (never down: the owner may have raised it).
+        if (priority(i) < String(old.priority || 'P3')) next.priority = priority(i);
         if (fixed) next.autoSolved = { version: store!.version, at: Date.now() };
         if (regressed) delete next.autoSolved;
         rows.push(row(id, next));

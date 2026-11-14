@@ -1354,7 +1354,7 @@ function attention(P, cur) {
   if (R.cpa && R.perSub && R.perSub < R.cpa) add('warn', `目前選的期間廣告還沒回本：每個新付費用戶花 ${fmtVal(R.cpa, 'cur')}，實拿 ${fmtVal(R.perSub, 'cur')}`, { card: 'roi' });
   const bugs = [...S.issues.values()].filter(i => i.type === 'bug' && isOpen(i.status) && inScope(i.product));
   const p0 = bugs.filter(i => i.priority === 'P0').length;
-  if (p0) add('bad', `有 ${p0} 個 P0（緊急）Bug 還沒結案`, { pri: 'P0' });
+  if (p0) add('bad', `未結案的 Bug 共 ${bugs.length} 個，其中 ${p0} 個是緊急（P0）`, { pri: 'all' });
   for (const i of bugs.filter(i => i.reopened?.at && Date.now() - i.reopened.at < 2 * 864e5)) add('bad', `修好的 Bug 又發生了：${esc(String(i.title).slice(0, 60))}`, { pri: 'all' });
   // Things that quietly stopped.
   for (const [pid, v] of Object.entries(S.sync?.sources || {})) if (inScope(pid) && Date.now() - (+v.at || 0) > 30 * 60000) add('warn', `${esc(pName(pid))} 的數字超過 30 分鐘沒更新，可能不是最新`);
@@ -1492,10 +1492,11 @@ function updateIssues(type) {
 const fmtN = v => Number(v || 0).toLocaleString('zh-TW');
 const minsAgo = t => { if (!t) return ''; const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? '剛剛' : m < 60 ? m + ' 分鐘前' : m < 1440 ? Math.floor(m / 60) + ' 小時前' : ago(t); };
 const SENTRY_ERR = { no_token: '還沒放入 Sentry 權杖', token_rejected: 'Sentry 權杖無效或權限不足' };
+// The count is the bugs still open in this list, not Sentry's own count (which keeps the ones marked 已解決 here).
 function sentryBarHTML() {
   const z = S.sentry; if (!z) return '';
   if (z.error) return `<div class="sbar"><b>Sentry 自動回報</b><span class="bad">尚未啟用：${esc(SENTRY_ERR[z.error] || z.error)}</span><span>放入權杖後，喵的又要上班了、提醒喵的錯誤會自動出現在這裡。</span></div>`;
-  const parts = Object.entries(z.sources || {}).map(([p, v]) => v.ok ? `<span>${esc(pName(p))}：<b>${v.open}</b> 個未解決錯誤</span>` : `<span class="bad">${esc(pName(p))}：同步失敗（${esc(SENTRY_ERR[v.error] || v.error)}）</span>`).join('');
+  const parts = Object.entries(z.sources || {}).map(([p, v]) => v.ok ? `<span>${esc(pName(p))}：<b>${[...S.issues.values()].filter(i => i.type === 'bug' && i.product === p && i.sentry && isOpen(i.status)).length}</b> 個未解決錯誤</span>` : `<span class="bad">${esc(pName(p))}：同步失敗（${esc(SENTRY_ERR[v.error] || v.error)}）</span>`).join('');
   return `<div class="sbar"><b>Sentry 自動回報</b>${parts}<span class="hint">每 2 分鐘同步・最後 ${minsAgo(z.at)}</span></div>`;
 }
 const META_ERR = { no_token: '還沒放入 Meta 權杖', token_rejected: 'Meta 權杖無效或已過期', no_permission: '權杖沒有這個廣告帳號的讀取權限', rate_limited: 'Meta 暫時限制查詢次數，下一小時會再試', no_exchange_rate: '查不到匯率' };
