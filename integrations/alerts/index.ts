@@ -194,14 +194,19 @@ const reviewsIn = (g: Awaited<ReturnType<typeof gather>>, pid: string, from: str
 const stars = (rs: Review[]) => rs.length ? (rs.reduce((a, r) => a + r.r, 0) / rs.length).toFixed(1) : '';
 
 function money(v: number, cur: string) {
-  const n = Math.round(v).toLocaleString('en-US');
-  return cur === 'TWD' ? `NT$${n}` : `${cur} ${n}`;
+  const n = Math.abs(Math.round(v)).toLocaleString('en-US'), sign = Math.round(v) < 0 ? '-' : '';
+  return cur === 'TWD' ? `${sign}NT$${n}` : `${sign}${cur} ${n}`;
 }
+// 營收 is what customers paid. 實拿 takes off the store's cut (cfg/main storeCut, 15 unless set; the same number the
+// site uses), 淨利 also takes off the ad spend. Estimates: the store's payout also loses tax, and no other cost is known.
+const cutOf = (g: { cfg: Record<string, any> }) => Math.min(90, Math.max(0, Number(g.cfg.main?.storeCut ?? 15) || 0));
+const netOf = (c: { rev: number }, cut: number) => c.rev * (1 - cut / 100);
+const profitOf = (c: { rev: number; ad: number }, cut: number) => netOf(c, cut) - c.ad;
 const pct = (now: number, avg: number) => avg ? `${now >= avg ? '▲' : '▼'}${Math.abs(Math.round((now - avg) / avg * 100))}%` : '';
 
 function dailyCard(g: Awaited<ReturnType<typeof gather>>, day: string): Card {
   const prev = Array.from({ length: 7 }, (_, i) => addDays(day, -(i + 1)));
-  const sections: Section[] = [], warns: Row[] = [], tot = blank();
+  const sections: Section[] = [], warns: Row[] = [], tot = blank(), cut = cutOf(g);
   for (const p of g.products) {
     const c = g.cell(p.id, day);
     const avg = prev.map(d => g.cell(p.id, d)).reduce((a, x) => ({ dl: a.dl + x.dl / 7, sub: a.sub + x.sub / 7, rev: a.rev + x.rev / 7, ad: a.ad + x.ad / 7 }), blank());
@@ -212,6 +217,7 @@ function dailyCard(g: Awaited<ReturnType<typeof gather>>, day: string): Card {
     const rows: Row[] = [['下載', `${c.dl.toLocaleString('en-US')}${avg.dl >= 1 ? `（平均 ${Math.round(avg.dl)} ${pct(c.dl, avg.dl)}）` : ''}`]];
     if (c.sub || c.rev || avg.sub >= 0.5) rows.push(['新訂閱', String(c.sub)], ['營收', `${money(c.rev, g.currency)}${avg.rev >= 1 ? `（${pct(c.rev, avg.rev)}）` : ''}`]);
     if (c.ad || avg.ad) rows.push(['廣告費', money(c.ad, g.currency)]);
+    if (c.rev || c.ad) rows.push(['淨利', money(profitOf(c, cut), g.currency)]);
     if (c.ad) rows.push(['營收÷廣告費', `${(c.rev / c.ad).toFixed(2)}x`]);
     if (c.ad && c.sub) rows.push(['每個新付費用戶', money(c.ad / c.sub, g.currency)]);
     if (cancel) rows.push(['關閉續訂', String(cancel)]);
@@ -230,8 +236,8 @@ function dailyCard(g: Awaited<ReturnType<typeof gather>>, day: string): Card {
   const kpis: Kpi[] = [
     { label: '下載', value: tot.dl.toLocaleString('en-US'), note: '昨天・全部產品', color: '#6A3FA0' },
     { label: '新訂閱', value: String(tot.sub), note: '昨天・全部產品', color: '#3B7536' },
-    { label: '營收', value: money(tot.rev, g.currency), note: '用戶付款金額', color: '#2C5E5A' },
-    { label: '廣告費', value: money(tot.ad, g.currency), note: tot.ad ? `營收÷廣告費 ${(tot.rev / tot.ad).toFixed(2)}x` : '昨天沒有花費', color: '#C96614' }];
+    { label: '營收', value: money(tot.rev, g.currency), note: `扣抽成 ${cut}% 實拿 ${money(netOf(tot, cut), g.currency)}`, color: '#2C5E5A' },
+    { label: '淨利', value: money(profitOf(tot, cut), g.currency), note: tot.ad ? `實拿再扣廣告費 ${money(tot.ad, g.currency)}` : '昨天沒有廣告費', color: '#C96614' }];
   return { title: '📊 產品工作站 日報', subtitle: `${dayLabel(day)} · 括號裡是跟前 7 天平均比`, kpis, sections };
 }
 
@@ -242,7 +248,7 @@ function weeklyCard(g: Awaited<ReturnType<typeof gather>>, mon: string): Card {
   const cancels = (p: string, from: string) => Array.from({ length: 7 }, (_, i) => g.cancels(p, addDays(from, i))).reduce((a, n) => a + n, 0);
   const inWeek = (t: unknown, from: string, to: string) => { const d = t ? dayOf(Number(t)) : ''; return d >= from && d <= to; };
   const n = (v: number) => v.toLocaleString('en-US'), m = (v: number) => money(v, g.currency);
-  const sections: Section[] = [], tot = blank(), was = blank();
+  const sections: Section[] = [], tot = blank(), was = blank(), cut = cutOf(g);
   for (const p of g.products) {
     const c = sum(p.id, a0), w = sum(p.id, b0);
     const born = [...g.bugs, ...g.solved].filter(b => b.product === p.id && inWeek(b.createdAt, a0, a1)).length;
@@ -254,6 +260,7 @@ function weeklyCard(g: Awaited<ReturnType<typeof gather>>, mon: string): Card {
     if (c.sub || c.rev || w.sub || w.rev) rows.push(['新訂閱', n(c.sub), n(w.sub), pct(c.sub, w.sub) || '—'], ['營收', m(c.rev), m(w.rev), pct(c.rev, w.rev) || '—']);
     if (c.ad || w.ad) rows.push(['廣告費', m(c.ad), m(w.ad), pct(c.ad, w.ad) || '—'],
       ['每個新付費用戶', c.ad && c.sub ? m(c.ad / c.sub) : '—', w.ad && w.sub ? m(w.ad / w.sub) : '—', c.ad && c.sub && w.ad && w.sub ? pct(c.ad / c.sub, w.ad / w.sub) : '—']);
+    if (c.rev || c.ad || w.rev || w.ad) rows.push(['淨利', m(profitOf(c, cut)), m(profitOf(w, cut)), profitOf(w, cut) > 0 ? pct(profitOf(c, cut), profitOf(w, cut)) : '—']);
     if (cx || wx) rows.push(['關閉續訂', n(cx), n(wx), pct(cx, wx) || '—']);
     // 留存: installs first opened in the week, and how many came back the next day (pushed hourly by the app).
     const coh = ((g.cfg['usage-' + p.id]?.cohorts || []) as { d: string; n: number; d1?: number }[]).filter(r => r.d1 != null);
@@ -268,7 +275,7 @@ function weeklyCard(g: Awaited<ReturnType<typeof gather>>, mon: string): Card {
     { label: '下載', value: n(tot.dl), note: `前一週 ${n(was.dl)} ${pct(tot.dl, was.dl)}`, color: '#6A3FA0' },
     { label: '新訂閱', value: n(tot.sub), note: `前一週 ${n(was.sub)} ${pct(tot.sub, was.sub)}`, color: '#3B7536' },
     { label: '營收', value: m(tot.rev), note: `前一週 ${m(was.rev)} ${pct(tot.rev, was.rev)}`, color: '#2C5E5A' },
-    { label: '廣告費', value: m(tot.ad), note: tot.ad ? `營收÷廣告費 ${(tot.rev / tot.ad).toFixed(2)}x` : '上週沒有花費', color: '#C96614' }];
+    { label: '淨利', value: m(profitOf(tot, cut)), note: `扣抽成 ${cut}% 與廣告費 ${m(tot.ad)}・前一週 ${m(profitOf(was, cut))}`, color: '#C96614' }];
   return { title: '🗓 產品工作站 週報', subtitle: `${dayLabel(a0)}–${dayLabel(a1)} · 對比前一週`, kpis, sections };
 }
 
