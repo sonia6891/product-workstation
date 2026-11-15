@@ -1,10 +1,13 @@
 -- 喵的，又要上班了 (Supabase project meow-work).
 -- dl  = App Store SALES report total downloads (first + re-downloads, product types 1/1F/1T/F1/3/3F/3T/F3).
---       Days the report hasn't arrived yet (today, usually yesterday) and all Android use first opens
---       from app_daily_opens; the hourly 120-day push swaps in Apple's numbers once the report lands.
+--       Android = Google Play's install report (public.play_install_rows, filled by the edge function
+--       play-installs, integrations/play-installs). Days a store's report hasn't arrived yet use first opens
+--       from app_daily_opens; the hourly 120-day push swaps in the store's numbers once the report lands.
 -- sub = new original transactions; act = transactions whose period covers the end of the day (or now);
 -- rev = customer price of each paid transaction (gross, before Apple's commission), per currency.
 -- All from both stores' official purchases via workstation.store_tx() / store_events() (store-meow-work.sql).
+-- Each row says its platform (pf: ios | android) so the workstation can show 蘋果與安卓 apart; it adds the rows of
+-- one day and market back up for the totals.
 create or replace function workstation.export_rows(p_from date, p_to date) returns jsonb
 language sql stable set search_path = '' as $fn$
 with
@@ -17,6 +20,12 @@ ios_report as (
   where r.report_type = 'SALES' and r.report_date between p_from and p_to and r.row->>'Product Type Identifier' in ('1', '1F', '1T', 'F1', '3', '3F', '3T', 'F3')
   group by 1, 2
 ),
+play_days as (
+  select distinct p.report_date d from public.play_install_rows p where p.report_date between p_from and p_to
+),
+play_report as (
+  select p.report_date d, p.country m, sum(p.installs) n from public.play_install_rows p where p.report_date between p_from and p_to group by 1, 2
+),
 first_open as (
   select o.day d, o.region m, o.platform, count(*) n
   from public.app_daily_opens o
@@ -25,50 +34,53 @@ first_open as (
   group by 1, 2, 3
 ),
 dl as (
-  select d, m, n from ios_report
-  union all select d, m, n from first_open where platform = 'android'
-  union all select f.d, f.m, f.n from first_open f where f.platform = 'ios' and not exists (select 1 from sales_days s where s.d = f.d)
+  select d, m, 'ios' pf, n from ios_report
+  union all select f.d, f.m, 'ios', f.n from first_open f where f.platform = 'ios' and not exists (select 1 from sales_days s where s.d = f.d)
+  union all select d, m, 'android', n from play_report
+  union all select f.d, f.m, 'android', f.n from first_open f where f.platform = 'android' and not exists (select 1 from play_days s where s.d = f.d)
 ),
 tx as (
-  select tid, otid, (pd at time zone 'Asia/Taipei')::date pday, pd, ed, price, cur, sf, revoked from workstation.store_tx()
+  select tid, otid, (pd at time zone 'Asia/Taipei')::date pday, pd, ed, price, cur, sf, revoked,
+    case when platform = 'google_play' then 'android' else 'ios' end pf
+  from workstation.store_tx()
 ),
 -- 新訂閱 = the day a subscription first paid money. A free trial counts only once it turns into a payment
 -- (then on that day), so trials cancelled before paying are not new subscriptions.
 first_paid as (
-  select distinct on (otid) otid, pday, sf from tx where price > 0 order by otid, pd
+  select distinct on (otid) otid, pday, sf, pf from tx where price > 0 order by otid, pd
 ),
 subs as (
-  select pday d, sf m, count(*) n from first_paid where pday between p_from and p_to group by 1, 2
+  select pday d, sf m, pf, count(*) n from first_paid where pday between p_from and p_to group by 1, 2, 3
 ),
 rev as (
-  select d, m, jsonb_object_agg(cur, amt) amt from (
-    select pday d, sf m, cur, sum(price) amt from tx where price > 0 and not revoked and cur is not null and pday between p_from and p_to group by 1, 2, 3
-  ) z group by 1, 2
+  select d, m, pf, jsonb_object_agg(cur, amt) amt from (
+    select pday d, sf m, pf, cur, sum(price) amt from tx where price > 0 and not revoked and cur is not null and pday between p_from and p_to group by 1, 2, 3, 4
+  ) z group by 1, 2, 3
 ),
 last_sf as (
-  select distinct on (otid) otid, sf from tx order by otid, pd desc
+  select distinct on (otid) otid, sf, pf from tx order by otid, pd desc
 ),
 days as (
   select gs.d0::date d, least(now(), ((gs.d0::date + 1)::timestamp at time zone 'Asia/Taipei')) cut
   from generate_series(p_from, p_to, interval '1 day') gs(d0)
 ),
 act as (
-  select dy.d, l.sf m, count(distinct t.otid) n
+  select dy.d, l.sf m, l.pf, count(distinct t.otid) n
   from days dy
   join tx t on t.pd < dy.cut and t.ed > dy.cut and not t.revoked
   join last_sf l on l.otid = t.otid
-  group by 1, 2
+  group by 1, 2, 3
 ),
 keys as (
-  select d, m from dl union select d, m from subs union select d, m from rev union select d, m from act
+  select d, m, pf from dl union select d, m, pf from subs union select d, m, pf from rev union select d, m, pf from act
 )
 select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-  'd', k.d, 'm', k.m,
-  'dl', (select sum(n) from dl where dl.d = k.d and dl.m is not distinct from k.m),
-  'sub', (select sum(n) from subs where subs.d = k.d and subs.m is not distinct from k.m),
-  'act', (select sum(n) from act where act.d = k.d and act.m is not distinct from k.m),
-  'rev', (select amt from rev where rev.d = k.d and rev.m is not distinct from k.m)
-)) order by k.d, k.m), '[]'::jsonb)
+  'd', k.d, 'm', k.m, 'pf', k.pf,
+  'dl', (select sum(n) from dl where dl.d = k.d and dl.m is not distinct from k.m and dl.pf = k.pf),
+  'sub', (select sum(n) from subs where subs.d = k.d and subs.m is not distinct from k.m and subs.pf = k.pf),
+  'act', (select sum(n) from act where act.d = k.d and act.m is not distinct from k.m and act.pf = k.pf),
+  'rev', (select amt from rev where rev.d = k.d and rev.m is not distinct from k.m and rev.pf = k.pf)
+)) order by k.d, k.m, k.pf), '[]'::jsonb)
 from keys k
 $fn$;
 revoke execute on function workstation.export_rows(date, date) from public, anon, authenticated;

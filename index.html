@@ -632,7 +632,7 @@ const isOpen = s => s !== 'done' && s !== 'wont';
 const SLOT = i => `var(--s${(i % 8) + 1})`;
 
 /* ================= state ================= */
-const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), subEvents: new Map(), subs: new Map(), usage: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
+const S = { cfg: DEFAULT_CFG, products: new Map(), metrics: new Map(), pmetrics: new Map(), subEvents: new Map(), subs: new Map(), usage: new Map(), issues: new Map(), events: new Map(), got: new Set(), ready: false };
 const UI = { view: 'overview', product: 'all', market: 'all', range: 'mo', metric: 'dl', group: 'auto', fold: {}, f: { bug: { st: 'open', pri: 'all', q: '' }, feature: { st: 'open', pri: 'all', q: '' } } };
 try { const saved = JSON.parse(localStorage.getItem('pws-ui') || 'null'); if (saved) Object.assign(UI, saved, { f: Object.assign(UI.f, saved.f || {}) }); } catch (e) {}
 // 期間: 7 天, 當月, 3 個月, 12 個月. A choice saved before 11/13 (30 / 90 天) becomes 當月 / 3 個月.
@@ -763,6 +763,16 @@ function rowToRec(r) {
   if (r.ad_spend != null) rec.ad = r.ad_spend;
   return rec;
 }
+// 蘋果與安卓 (daily_platform): the same daily numbers split by platform, for the 蘋果與安卓 card and the 依平台
+// chart only. Totals everywhere else still come from daily_metrics.
+const STORE_PF = [['ios', '蘋果', 'var(--s1)'], ['android', '安卓', 'var(--s3)']];
+function applyPRow(r, removed) {
+  const mo = String(r.date).slice(0, 7), dd = String(r.date).slice(8, 10), key = `${r.product_id}__${r.market}__${r.platform}__${mo}`;
+  let doc = S.pmetrics.get(key);
+  if (removed) { if (doc && doc.d) { delete doc.d[dd]; if (!Object.keys(doc.d).length) S.pmetrics.delete(key); } return; }
+  if (!doc) { doc = { p: r.product_id, m: r.market, f: r.platform, mo, d: {} }; S.pmetrics.set(key, doc); }
+  doc.d[dd] = rowToRec(r);
+}
 function applyRow(r, removed) {
   const mo = String(r.date).slice(0, 7), dd = String(r.date).slice(8, 10), key = `${r.product_id}__${r.market}__${mo}`;
   let doc = S.metrics.get(key);
@@ -830,10 +840,11 @@ async function fetchAll(table) {
   return out;
 }
 async function loadAll() {
-  const [docs, rows, subs] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics'), fetchAll('sub_events').catch(() => [])]);
-  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.usage = new Map(); S.storeVersions = null; S.sentry = null; S.metaAds = null; S.station = null; S.stationFire = null; S.cfg = DEFAULT_CFG;
+  const [docs, rows, subs, prows] = await Promise.all([fetchAll('docs'), fetchAll('daily_metrics'), fetchAll('sub_events').catch(() => []), fetchAll('daily_platform').catch(() => [])]);
+  S.products = new Map(); S.issues = new Map(); S.events = new Map(); S.metrics = new Map(); S.pmetrics = new Map(); S.subEvents = new Map(); S.subs = new Map(); S.usage = new Map(); S.storeVersions = null; S.sentry = null; S.metaAds = null; S.station = null; S.stationFire = null; S.cfg = DEFAULT_CFG;
   docs.forEach(d => applyDoc(d.collection, d.id, d.data));
   rows.forEach(r => applyRow(r));
+  prows.forEach(r => applyPRow(r));
   subs.forEach(r => S.subEvents.set(r.product_id + '/' + r.event_id, r));
   S.loadedAt = Date.now();
 }
@@ -850,6 +861,7 @@ function subscribeLive() {
   sb.channel('workstation')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'docs' }, pl => { const r = pl.eventType === 'DELETE' ? pl.old : pl.new; if (r && r.collection) { applyDoc(r.collection, r.id, pl.eventType === 'DELETE' ? null : r.data); schedule(); } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_metrics' }, pl => { if (pl.eventType === 'DELETE') { if (pl.old && pl.old.date) applyRow(pl.old, true); } else applyRow(pl.new); schedule(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_platform' }, pl => { if (pl.eventType === 'DELETE') { if (pl.old && pl.old.date) applyPRow(pl.old, true); } else applyPRow(pl.new); schedule(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_events' }, pl => { const r = pl.eventType === 'DELETE' ? pl.old : pl.new; if (r && r.event_id) { const k = r.product_id + '/' + r.event_id; if (pl.eventType === 'DELETE') S.subEvents.delete(k); else S.subEvents.set(k, r); schedule(); } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, async () => { const mine = await loadMembers(); if (!mine) { location.reload(); return; } built.view = null; schedule(); })
     .subscribe(st => { if (st === 'SUBSCRIBED') setSync('ok'); else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT') setSync('slow'); });
@@ -1008,13 +1020,14 @@ function aggregate({ start, end, gran, groupBy, p = UI.product, m = UI.market })
   const groups = new Map();
   const G = k => { let g = groups.get(k); if (!g) { g = { key: k, s: B.map(blankCell), acts: new Map() }; groups.set(k, g); } return g; };
   const ms = start.slice(0, 7), me = end.slice(0, 7);
-  for (const doc of S.metrics.values()) {
+  const src = groupBy === 'platform' ? S.pmetrics : S.metrics;
+  for (const doc of src.values()) {
     if (!doc || !S.products.has(doc.p)) continue;
     if (p !== 'all' && doc.p !== p) continue;
     if (m !== 'all' && doc.m !== m) continue;
     if (doc.mo < ms || doc.mo > me) continue;
-    const g = G(groupBy === 'product' ? doc.p : groupBy === 'market' ? doc.m : 'total');
-    const combo = doc.p + '|' + doc.m;
+    const g = G(groupBy === 'product' ? doc.p : groupBy === 'market' ? doc.m : groupBy === 'platform' ? doc.f : 'total');
+    const combo = doc.p + '|' + doc.m + '|' + (doc.f || '');
     for (const [dd, r] of Object.entries(doc.d || {})) {
       const date = doc.mo + '-' + dd;
       if (date < start || date > end || !r) continue;
@@ -1204,7 +1217,8 @@ function renderOverview(el) {
   const tr = aggregate({ start: P.start, end: P.end, gran: P.gran, groupBy: gb });
   let groups = [...tr.groups.values()];
   const totOf = g => g.s.reduce((a, c) => a + (c.rev + c.dl + c.ad), 0);
-  groups.sort((a, b) => gb === 'product' ? ((S.products.get(a.key)?.slot ?? 0) - (S.products.get(b.key)?.slot ?? 0)) : gb === 'market' ? mIndex(a.key) - mIndex(b.key) : 0);
+  const pfIdx = k => STORE_PF.findIndex(x => x[0] === k);
+  groups.sort((a, b) => gb === 'product' ? ((S.products.get(a.key)?.slot ?? 0) - (S.products.get(b.key)?.slot ?? 0)) : gb === 'market' ? mIndex(a.key) - mIndex(b.key) : gb === 'platform' ? pfIdx(a.key) - pfIdx(b.key) : 0);
   if (groups.length > 8) {
     const keep = [...groups].sort((a, b) => totOf(b) - totOf(a)).slice(0, 7);
     const rest = groups.filter(g => !keep.includes(g));
@@ -1212,8 +1226,8 @@ function renderOverview(el) {
     groups = groups.filter(g => keep.includes(g)).concat(other);
   }
   const series = groups.map(g => ({
-    name: g.key === '__other' ? '其他' : gb === 'product' ? pName(g.key) : gb === 'market' ? mName(g.key) : '合計',
-    color: g.key === '__other' ? 'var(--muted)' : gb === 'product' ? pColor(g.key) : gb === 'market' ? SLOT(mIndex(g.key)) : 'var(--s1)',
+    name: g.key === '__other' ? '其他' : gb === 'product' ? pName(g.key) : gb === 'market' ? mName(g.key) : gb === 'platform' ? (STORE_PF[pfIdx(g.key)]?.[1] || g.key) : '合計',
+    color: g.key === '__other' ? 'var(--muted)' : gb === 'product' ? pColor(g.key) : gb === 'market' ? SLOT(mIndex(g.key)) : gb === 'platform' ? (STORE_PF[pfIdx(g.key)]?.[2] || 'var(--muted)') : 'var(--s1)',
     values: g.s.map(c => cellVal(c, UI.metric))
   }));
   const evs = [...S.events.values()].filter(e => e.date >= P.start && e.date <= P.end && (UI.product === 'all' || !e.product || e.product === 'all' || e.product === UI.product))
@@ -1257,7 +1271,7 @@ function renderOverview(el) {
   const topFeat = feats.filter(i => isOpen(i.status)).sort((a, b) => (b.votes || 0) - (a.votes || 0)).slice(0, 5);
 
   const metricChips = Object.entries(METRICS).filter(([k]) => k !== 'cpa').map(([k, M]) => `<button class="chip ${UI.metric === k ? 'on' : ''}" data-act="metric" data-id="${k}">${M.name}</button>`).join('');
-  const groupSeg = [['total', '合計'], ['product', '依產品'], ['market', '依市場']].map(([k, l]) => `<button type="button" data-act="group" data-id="${k}" class="${gb === k ? 'on' : ''}">${l}</button>`).join('');
+  const groupSeg = [['total', '合計'], ['product', '依產品'], ['market', '依市場'], ['platform', '依平台']].map(([k, l]) => `<button type="button" data-act="group" data-id="${k}" class="${gb === k ? 'on' : ''}">${l}</button>`).join('');
   const roas = cellVal(cur, 'roas');
   const td = aggregate({ start: TODAY, end: TODAY, gran: 'all', groupBy: 'total' }).groups.get('total')?.s[0] || blankCell();
   const liveHTML = lastPush() ? `<div class="live span12" aria-live="off"><span class="lt">今天即時</span>
@@ -1271,6 +1285,7 @@ function renderOverview(el) {
     ${liveHTML}
     ${subsNowHTML()}
     <div class="kpis k5 span12">${tiles}</div>
+    ${platformHTML(P, cur)}
     <section class="card span12"><header><h3>成長趨勢<small>${esc(METRICS[UI.metric].name)}・${P.gran === 'day' ? '每日' : '每月'}${evs.length ? '・◆ 為事件標記' : ''}</small></h3><div class="seg">${groupSeg}</div></header>
       <div class="chips" style="margin-bottom:12px">${metricChips}</div>
       ${legendHTML(series)}<div class="chart" id="c-trend"></div></section>
@@ -1291,6 +1306,27 @@ function renderOverview(el) {
   drawLine($('#c-trend'), { labels: tr.B.map(b => b.label), full: tr.B.map(b => b.full), series, fmt: METRICS[UI.metric].fmt, events: evs, area: true, height: 260, aria: '成長趨勢圖', emptyText });
   drawLine($('#c-ra'), { labels: daily.B.map(b => b.label), full: daily.B.map(b => b.full), series: ra, fmt: 'cur', height: 220, aria: '營收與廣告花費', emptyText: '這段期間還沒有數據' });
   USAGE_CHARTS.forEach(c => { const host = document.getElementById(c.id); if (host) drawLine(host, c.cfg); });
+}
+
+/* ================= 蘋果與安卓 ================= */
+// The period's numbers per platform, then the total. The total is the usual one (daily_metrics): when it holds more
+// than the two platforms add up to (a product that doesn't say its platform, numbers typed in by hand), the
+// difference is its own row so the columns still add up. Downloads are each store's report, first opens until it lands.
+function platformHTML(P, cur) {
+  const pf = aggregate({ start: P.start, end: P.end, gran: 'all', groupBy: 'platform' }).groups;
+  if (![...pf.values()].some(g => g.s[0].has)) return '';
+  const cells = c => `<td class="n">${fmtVal(cellVal(c, 'dl'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'sub'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'act'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'rev'), 'cur')}</td>`;
+  const rows = STORE_PF.map(([k, name, color]) => ({ name, color, c: pf.get(k)?.s[0] || blankCell() }));
+  const sum = rows.reduce((a, r) => mergeCells(a, r.c), blankCell());
+  const rest = { dl: cur.dl - sum.dl, sub: cur.sub - sum.sub, rev: cur.rev - sum.rev, act: (cur.hasAct ? cur.act : 0) - (sum.hasAct ? sum.act : 0) };
+  const hasRest = Math.abs(rest.dl) > 0.5 || Math.abs(rest.sub) > 0.5 || Math.abs(rest.rev) > 0.5 || Math.abs(rest.act) > 0.5;
+  const restRow = hasRest ? `<tr><td class="hint">沒有分平台</td>${cells({ ...rest, ad: 0, has: true, hasAct: true })}</tr>` : '';
+  const share = (c, k) => sum[k] > 0 ? `<small class="hint"> ${Math.round(c[k] / sum[k] * 100)}%</small>` : '';
+  return `<section class="card span12" id="card-platform"><header><h3>蘋果與安卓<small>選的期間・有效訂閱是期末人數</small></h3></header>
+    <div class="tw"><table class="t"><thead><tr><th>平台</th><th class="n">下載</th><th class="n">新訂閱</th><th class="n">有效訂閱</th><th class="n">營收</th></tr></thead>
+    <tbody>${rows.map(r => `<tr><td><i class="dot" style="background:${r.color}"></i> ${r.name}${share(r.c, 'sub')}</td>${cells(r.c)}</tr>`).join('')}${restRow}
+    <tr><td><b>合計</b></td>${cells(cur).replace(/<td class="n">/g, '<td class="n"><b>').replace(/<\/td>/g, '</b></td>')}</tr></tbody></table></div>
+    <p class="hint" style="margin:10px 0 0">下載用兩家商店的官方報表：蘋果是 App Store、安卓是 Google Play。報表大約慢兩天，還沒出來的日子先用「第一次打開 App 的人數」，會比後台少一點，報表到了就自動換成官方數字。百分比是新訂閱的佔比。</p></section>`;
 }
 
 /* ================= 廣告回本 ================= */
