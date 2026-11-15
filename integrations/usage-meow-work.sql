@@ -1,6 +1,6 @@
 -- 喵的，又要上班了 (Supabase project meow-work): 版本與留存 card on the workstation 總覽.
 -- export_usage() reads the anonymous App opens (public.app_daily_opens: install_id, day, platform, app_version; kept
--- since 2026-11-02) and the App Store transactions, and push_usage() sends it hourly to public.ingest_usage on the
+-- since 2026-11-02) and both stores' official purchases (store-meow-work.sql), and push_usage() sends it hourly to public.ingest_usage on the
 -- workstation (stored as docs cfg/usage-meow-work). Only iOS / Android opens count; the web preview is left out.
 --   versions: per day of the last 45, how many installs opened each version (build number dropped: 3.0.1(14001) → 3.0.1).
 --   first_seen: the first day each version was opened anywhere.
@@ -45,25 +45,14 @@ vcoh as (
   from ffirst f, t where f.fd >= t.since + 3 and f.fd < t.today
   group by 1, 2 having count(*) >= 20
 ),
-ev as (
-  select case when jsonb_typeof(e.raw->'transaction') = 'object' then e.raw->'transaction' else e.raw end tr, e.original_transaction_id, e.created_at
-  from public.store_subscription_events e where e.environment = 'Production'
-),
-tx as (
-  select distinct on (tr->>'transactionId') coalesce(tr->>'originalTransactionId', original_transaction_id) otid,
-    coalesce(nullif(tr->>'price', '')::numeric, 0) > 0 paid,
-    tr->>'offerType' = '1' and coalesce(nullif(tr->>'price', '')::numeric, 0) = 0 trial,
-    to_timestamp(nullif(tr->>'expiresDate', '')::numeric / 1000) ed
-  from ev where tr ? 'transactionId' order by tr->>'transactionId', created_at
-),
+tx as (select otid, price > 0 paid, trial, ed from workstation.store_tx()),
 tr as (select otid, bool_or(paid) paid, max(ed) filter (where trial) ted from tx group by otid having bool_or(trial)),
 off as (
-  select distinct on (e.platform, coalesce(case when e.platform = 'google_play' then e.transaction_id end, e.original_transaction_id, e.event_id))
-    case when e.platform = 'google_play' then 'android' else 'ios' end p, coalesce(e.app_version, '') v, coalesce(e.signed_at, e.created_at) at
-  from public.store_subscription_events e
-  where upper(e.environment) = 'PRODUCTION'
-    and ((e.event_type = 'DID_CHANGE_RENEWAL_STATUS' and e.subtype = 'AUTO_RENEW_DISABLED') or e.event_type = 'RTDN_3')
-  order by e.platform, coalesce(case when e.platform = 'google_play' then e.transaction_id end, e.original_transaction_id, e.event_id), coalesce(e.signed_at, e.created_at) desc
+  select distinct on (e.platform, coalesce(e.otid, e.event_id))
+    case when e.platform = 'google_play' then 'android' else 'ios' end p, coalesce(e.app_version, '') v, e.created_at at
+  from workstation.store_events() e
+  where e.event_type = 'DID_CHANGE_RENEWAL_STATUS' and e.subtype = 'AUTO_RENEW_DISABLED'
+  order by e.platform, coalesce(e.otid, e.event_id), e.created_at desc
 ),
 vcancel as (select p, v, count(*) n, count(*) filter (where at > now() - interval '30 days') n30 from off group by 1, 2)
 select jsonb_build_object(

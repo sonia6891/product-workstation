@@ -4,7 +4,7 @@
 --       from app_daily_opens; the hourly 120-day push swaps in Apple's numbers once the report lands.
 -- sub = new original transactions; act = transactions whose period covers the end of the day (or now);
 -- rev = customer price of each paid transaction (gross, before Apple's commission), per currency.
--- All from App Store Server Notifications / verified transactions in store_subscription_events (Production).
+-- All from both stores' official purchases via workstation.store_tx() / store_events() (store-meow-work.sql).
 create or replace function workstation.export_rows(p_from date, p_to date) returns jsonb
 language sql stable set search_path = '' as $fn$
 with
@@ -30,17 +30,7 @@ dl as (
   union all select f.d, f.m, f.n from first_open f where f.platform = 'ios' and not exists (select 1 from sales_days s where s.d = f.d)
 ),
 tx as (
-  select distinct on (t->>'transactionId')
-    t->>'transactionId' tid, t->>'originalTransactionId' otid,
-    (to_timestamp((t->>'purchaseDate')::numeric / 1000) at time zone 'Asia/Taipei')::date pday,
-    to_timestamp((t->>'purchaseDate')::numeric / 1000) pd,
-    to_timestamp(nullif(t->>'expiresDate', '')::numeric / 1000) ed,
-    coalesce(nullif(t->>'price', '')::numeric, 0) / 1000 price, t->>'currency' cur, t->>'storefront' sf,
-    t ? 'revocationDate' revoked
-  from public.store_subscription_events e
-  cross join lateral (select case when jsonb_typeof(e.raw->'transaction') = 'object' then e.raw->'transaction' else e.raw end t) x
-  where e.environment = 'Production' and t ? 'transactionId' and t ? 'purchaseDate'
-  order by t->>'transactionId', e.created_at
+  select tid, otid, (pd at time zone 'Asia/Taipei')::date pday, pd, ed, price, cur, sf, revoked from workstation.store_tx()
 ),
 -- 新訂閱 = the day a subscription first paid money. A free trial counts only once it turns into a payment
 -- (then on that day), so trials cancelled before paying are not new subscriptions.
@@ -89,28 +79,13 @@ revoke execute on function workstation.export_rows(date, date) from public, anon
 create or replace function workstation.export_events(p_since timestamptz) returns jsonb
 language sql stable set search_path = '' as $fn$
 with
-all_ev as (
-  select e.*, case when jsonb_typeof(e.raw->'transaction') = 'object' then e.raw->'transaction' else e.raw end t
-  from public.store_subscription_events e where e.environment = 'Production'
-),
-tx as (
-  select distinct on (t->>'transactionId')
-    t->>'transactionId' tid, coalesce(t->>'originalTransactionId', original_transaction_id) otid,
-    to_timestamp((t->>'purchaseDate')::numeric / 1000) pd,
-    to_timestamp(nullif(t->>'originalPurchaseDate', '')::numeric / 1000) opd,
-    coalesce(nullif(t->>'price', '')::numeric, 0) / 1000 price, t->>'currency' cur, t->>'storefront' sf,
-    t->>'offerType' = '1' and coalesce(nullif(t->>'price', '')::numeric, 0) = 0 trial,
-    t ? 'revocationDate' revoked
-  from all_ev where t ? 'transactionId' and t ? 'purchaseDate'
-  order by t->>'transactionId', created_at
-),
+all_ev as (select * from workstation.store_events()),
+tx as (select * from workstation.store_tx()),
 users as (
-  select distinct on (coalesce(t->>'originalTransactionId', original_transaction_id)) coalesce(t->>'originalTransactionId', original_transaction_id) otid, user_id
-  from all_ev where user_id is not null order by 1, created_at
+  select distinct on (otid) otid, user_id from all_ev where user_id is not null order by otid, created_at
 ),
 ev as (
-  select e.event_id, e.event_type, e.subtype, e.created_at at_, e.product_id,
-    coalesce(e.original_transaction_id, e.t->>'originalTransactionId') otid, e.user_id
+  select e.event_id, e.event_type, e.subtype, e.created_at at_, e.product_id, e.otid, e.user_id
   from all_ev e
   where e.created_at >= p_since
     and (e.event_type in ('EXPIRED', 'REFUND', 'REVOKE', 'DID_FAIL_TO_RENEW', 'GRACE_PERIOD_EXPIRED')
@@ -142,30 +117,16 @@ revoke execute on function workstation.export_events(timestamptz) from public, a
 create or replace function workstation.export_subs() returns jsonb
 language sql stable set search_path = '' as $fn$
 with
-all_ev as (
-  select e.*, case when jsonb_typeof(e.raw->'transaction') = 'object' then e.raw->'transaction' else e.raw end t
-  from public.store_subscription_events e where e.environment = 'Production'
-),
-tx as (
-  select distinct on (t->>'transactionId')
-    t->>'transactionId' tid, coalesce(t->>'originalTransactionId', original_transaction_id) otid,
-    to_timestamp((t->>'purchaseDate')::numeric / 1000) pd,
-    to_timestamp(nullif(t->>'expiresDate', '')::numeric / 1000) ed,
-    coalesce(t->>'productId', product_id) prod,
-    coalesce(nullif(t->>'price', '')::numeric, 0) > 0 paid,
-    t->>'offerType' = '1' and coalesce(nullif(t->>'price', '')::numeric, 0) = 0 trial,
-    t ? 'revocationDate' revoked
-  from all_ev where t ? 'transactionId' and t ? 'purchaseDate'
-  order by t->>'transactionId', created_at
-),
+all_ev as (select * from workstation.store_events()),
+tx as (select tid, otid, pd, ed, prod, price > 0 paid, trial, revoked from workstation.store_tx()),
 cur as (
   select distinct on (otid) otid, prod, trial, ed from tx where pd <= now() and ed > now() and not revoked order by otid, pd desc
 ),
 renew as (
-  select distinct on (coalesce(original_transaction_id, t->>'originalTransactionId'))
-    coalesce(original_transaction_id, t->>'originalTransactionId') otid, subtype = 'AUTO_RENEW_DISABLED' off
+  select distinct on (otid)
+    otid, subtype = 'AUTO_RENEW_DISABLED' off
   from all_ev where event_type = 'DID_CHANGE_RENEWAL_STATUS'
-  order by coalesce(original_transaction_id, t->>'originalTransactionId'), created_at desc
+  order by otid, created_at desc
 ),
 a as (
   select case when c.prod ~* 'year|annual' then 'yearly' when c.prod ~* 'month' then 'monthly' else 'other' end plan,
@@ -179,14 +140,14 @@ firsts as (select distinct on (otid) otid, pd first_pd, prod from tx where paid 
 -- their account (sync, backup checkpoint, push token, AI chat, speech). App opens are anonymous (install_id), so
 -- opening the app without changing anything leaves no trace here. Deleted accounts have no user and drop out.
 offs as (
-  select distinct on (coalesce(original_transaction_id, t->>'originalTransactionId'))
-    coalesce(original_transaction_id, t->>'originalTransactionId') otid, created_at off_at
+  select distinct on (otid)
+    otid, created_at off_at
   from all_ev where event_type = 'DID_CHANGE_RENEWAL_STATUS' and subtype = 'AUTO_RENEW_DISABLED'
-  order by coalesce(original_transaction_id, t->>'originalTransactionId'), created_at desc
+  order by otid, created_at desc
 ),
 off_users as (
   select o.otid, o.off_at, (o.off_at at time zone 'Asia/Taipei')::date off_day,
-    (select e.user_id from all_ev e where coalesce(e.original_transaction_id, e.t->>'originalTransactionId') = o.otid and e.user_id is not null order by e.created_at limit 1) uid
+    (select e.user_id from all_ev e where e.otid = o.otid and e.user_id is not null order by e.created_at limit 1) uid
   from offs o
 ),
 off_used as (

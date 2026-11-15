@@ -191,6 +191,7 @@ main { min-width: 0; padding-block: 22px 60px; padding-left: 28px; padding-right
 .attn-list li.bad > i { background: var(--critical); }
 .attn-list li > span { flex: 1; min-width: 0; }
 .attn-list li .btn { flex: none; }
+.attn-list li .attn-del { padding-left: 8px; padding-right: 8px; color: var(--muted, inherit); }
 .rev { border-top: 1px solid var(--line); padding: 10px 0; }
 .rev:first-child { border-top: 0; padding-top: 0; }
 .rev .rh { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 13.5px; }
@@ -747,7 +748,7 @@ function writeDays(p, m, mo, mutate) {
 const genId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 20);
 const mapOf = c => c === 'products' ? S.products : c === 'issues' ? S.issues : c === 'events' ? S.events : null;
 function applyDoc(c, id, data) {
-  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id === 'meta-ads') S.metaAds = data; else if (id === 'station') S.station = data; else if (id === 'station-fire') S.stationFire = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } else if (id.startsWith('usage-')) { if (data) S.usage.set(id.slice(6), data); else S.usage.delete(id.slice(6)); } else if (id === 'store-versions') S.storeVersions = data; else if (id === 'reviews') S.reviews = data; else if (id === 'alerts') S.alerts = data; return; }
+  if (c === 'cfg') { if (id === 'main') S.cfg = data ? Object.assign({}, DEFAULT_CFG, data) : DEFAULT_CFG; else if (id === 'sync') { S.sync = data; tickLive(); } else if (id === 'sentry') S.sentry = data; else if (id === 'meta-ads') S.metaAds = data; else if (id === 'station') S.station = data; else if (id === 'station-fire') S.stationFire = data; else if (id.startsWith('subs-')) { if (data) S.subs.set(id.slice(5), data); else S.subs.delete(id.slice(5)); } else if (id.startsWith('usage-')) { if (data) S.usage.set(id.slice(6), data); else S.usage.delete(id.slice(6)); } else if (id === 'store-versions') S.storeVersions = data; else if (id === 'reviews') S.reviews = data; else if (id === 'alerts') S.alerts = data; else if (id === 'attn-off') S.attnOff = data; return; }
   const m = mapOf(c); if (!m) return;
   // A bug marked 已解決 leaves the list (the database moves it to 'solved', see integrations/solved.sql).
   if (data && c === 'issues' && data.type === 'bug' && data.status === 'done') data = null;
@@ -1371,13 +1372,23 @@ function attention(P, cur) {
     add('warn', `站長的進度讀不到（${esc(STATION_ERR[S.station.error] || S.station.error)}），交出去的 Bug 會一直停在同一個狀態`, { go: 'settings' });
   return out;
 }
-function attentionHTML(items) {
+// 刪除: an item the user has read and deleted stays gone on every device (docs cfg/attn-off, key = hash of its
+// wording). It comes back only when the wording changes, i.e. something new happened (another number, another bug).
+// Deletions are forgotten after 14 days so the doc stays small and a problem that is still there shows up again.
+const ATTN_KEEP = 14 * 864e5;
+const attnKey = t => { let h = 5381; for (let i = 0; i < t.length; i++) h = (h * 33 + t.charCodeAt(i)) >>> 0; return h.toString(36); };
+const attnOffNow = () => Object.fromEntries(Object.entries(S.attnOff?.keys || {}).filter(([, at]) => Date.now() - at < ATTN_KEEP));
+async function setAttnOff(keys) { await W(() => db.doc('cfg/attn-off').set({ keys, updatedAt: Date.now() })); }
+function attentionHTML(all) {
+  const off = attnOffNow(), items = all.filter(it => !off[attnKey(it.text)]), hidden = all.length - items.length;
   const btn = it => it.card ? `<button type="button" class="btn sm" data-act="showcard" data-id="${it.card}">看明細</button>`
     : it.pri ? `<button type="button" class="btn sm" data-act="gobugs" data-pri="${it.pri}">看 Bug</button>`
     : it.go ? `<button type="button" class="btn sm" data-act="go" data-id="${it.go}">${it.go === 'settings' ? '到設定' : '去看看'}</button>` : '';
-  const body = items.length ? `<ul class="attn-list">${items.map(it => `<li class="${it.level}"><i></i><span>${it.text}</span>${btn(it)}</li>`).join('')}</ul>`
-    : '<p class="hint">昨天的數字、Bug、評論和各項同步都正常。</p>';
-  return `<section class="card span12"><header><h3>今天要注意的事<small>${items.length ? `${items.length} 件` : '沒有'}・跟 LINE 日報同一套檢查</small></h3></header>${body}</section>`;
+  const del = it => `<button type="button" class="btn sm ghost attn-del" data-act="attnoff" data-k="${attnKey(it.text)}" title="看過了，刪除" aria-label="刪除這一則">✕</button>`;
+  const body = items.length ? `<ul class="attn-list">${items.map(it => `<li class="${it.level}"><i></i><span>${it.text}</span>${btn(it)}${del(it)}</li>`).join('')}</ul>`
+    : `<p class="hint">${hidden ? '看過的都刪掉了，目前沒有新的事。' : '昨天的數字、Bug、評論和各項同步都正常。'}</p>`;
+  const undo = hidden ? `<button type="button" class="btn sm ghost" data-act="attnback">還原刪除的 ${hidden} 件</button>` : '';
+  return `<section class="card span12"><header><h3>今天要注意的事<small>${items.length ? `${items.length} 件` : '沒有'}・跟 LINE 日報同一套檢查</small></h3>${undo}</header>${body}</section>`;
 }
 
 /* ================= App Store 評論 (read hourly by the edge function `alerts`, docs cfg/reviews) ================= */
@@ -1679,7 +1690,7 @@ function subsNowHTML() {
   const monthNew = snaps.reduce((a, s) => a + (+s.month_new || 0), 0), monthOff = snaps.reduce((a, s) => a + (+s.month_off || 0), 0), monthExp = snaps.reduce((a, s) => a + (+s.month_expired || 0), 0);
   const usingKnown = snaps.some(s => s.month_off_using != null), offUsing = snaps.reduce((a, s) => a + (+s.month_off_using || 0), 0);
   const mo = +TODAY.slice(5, 7);
-  return `<section class="card span12"><header><h3>訂閱現況<small>此刻的有效訂閱・依 App Store 通知即時更新</small></h3><button class="btn sm" data-act="go" data-id="churn">退訂紀錄</button></header>
+  return `<section class="card span12"><header><h3>訂閱現況<small>此刻的有效訂閱・依蘋果與安卓商店通知即時更新</small></h3><button class="btn sm" data-act="go" data-id="churn">退訂紀錄</button></header>
     <div class="tw"><table class="t"><thead><tr><th>方案</th><th class="n">有效<span class="lg">訂閱</span></th><th class="n">會<span class="lg">自動</span>續訂</th><th class="n">已關閉<span class="lg">續訂</span></th>${trial ? '<th class="n">試用中</th>' : ''}<th class="n">${mo} 月新<span class="lg">訂閱</span></th></tr></thead>
     <tbody>${rows}<tr><td><b>合計</b></td><td class="n"><b>${fmtVal(total.active, 'int')}</b></td><td class="n"><b>${fmtVal(total.renewing, 'int')}</b></td><td class="n"><b>${fmtVal(total.off, 'int')}</b></td>${trial ? `<td class="n"><b>${fmtVal(total.trial, 'int')}</b></td>` : ''}<td class="n"><b>${fmtVal(monthNew, 'int')}</b></td></tr></tbody></table></div>
     <p class="hint" style="margin:10px 0 0">「已關閉續訂」的人這一期已付費、到期前仍可使用，但到期後不會再扣款。${mo} 月至今：新訂閱 ${monthNew}・關閉續訂 ${monthOff}${usingKnown && monthOff ? `（<b>${offUsing} 位退訂後隔天還在用</b>）` : ''}・到期失效 ${monthExp}。</p></section>`;
@@ -2258,6 +2269,8 @@ document.addEventListener('click', async e => {
   switch (a) {
     case 'status': return;
     case 'go': go(id); break;
+    case 'attnoff': el.disabled = true; setAttnOff({ ...attnOffNow(), [el.dataset.k]: Date.now() }); break;
+    case 'attnback': setAttnOff({}); break;
     case 'fold': UI.fold = { ...UI.fold, [id]: !isFolded(id) }; saveUI(); renderAll(); break;
     case 'showcard': if (isFolded(id)) { UI.fold = { ...UI.fold, [id]: false }; saveUI(); renderAll(); } document.getElementById('card-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
     case 'gobugs': UI.f.bug.pri = el.dataset.pri; UI.f.bug.st = 'open'; saveUI(); go('bugs'); break;
