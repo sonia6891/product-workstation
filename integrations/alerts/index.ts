@@ -8,6 +8,7 @@
 //  - 週報: Monday after 09:00 Taipei, last week (Mon–Sun) next to the week before it.
 //  - App Store 評論: Apple's public review feed, read hourly for every product with an App Store ID in every market of
 //    設定 (kept as docs cfg/reviews, shown on 總覽). A new 1–2 star review goes out as an alert.
+//  - 挽回信回覆: what someone answered on the 挽回信 page (integrations/winback.sql) goes out as an alert.
 // Each goes out as a LINE card (same look as 喵管家's reports); plain text is the fallback and the altText.
 // Every alert is sent once (cfg/alerts remembers what went out, never the token). Several found together go out as
 // one message: the LINE free plan allows 200 pushes a month, shared with 串文雷達.
@@ -159,7 +160,9 @@ async function gather(today: string) {
   }
   const cell = (p: string, d: string) => by.get(`${p}|${d}`) || blank();
   const cancels = (p: string, d: string) => (subEv || []).filter(e => e.product_id === p && e.kind === 'cancel' && dayOf(Date.parse(e.event_at)) === d).length;
-  return { products, cfg, bugs, cell, cancels, currency: String(cfg.main?.currency || 'TWD'), solved: (solved || []) as any[], reviews: (cfg.reviews || null) as Reviews | null };
+  const { data: winback } = await sb.rpc('winback_recent_answers');
+  return { products, cfg, bugs, cell, cancels, currency: String(cfg.main?.currency || 'TWD'), solved: (solved || []) as any[], reviews: (cfg.reviews || null) as Reviews | null,
+    winback: (winback || []) as { product_id: string; k: string; updated_at: string; reason: string | null; comeback: string | null; comment: string | null; is_test: boolean }[] };
 }
 
 // App Store 評論: one public feed per market (the 50 newest there), plus the Taiwan store's rating. Hourly.
@@ -296,6 +299,15 @@ function liveAlerts(g: Awaited<ReturnType<typeof gather>>, today: string, sent: 
   for (const p of g.products) {
     const avg = prev.reduce((a, d) => a + g.cell(p.id, d).ad / 7, 0), now = g.cell(p.id, today).ad;
     if (avg >= 100 && now > avg * 2) out.push({ key: `adspike-${p.id}-${today}`, text: `💸 ${p.name} 今天廣告費已經 ${money(now, g.currency)}，是平常一天（${money(avg, g.currency)}）的兩倍以上` });
+  }
+  // 挽回信: what people answered on the letter's page (public.winback_recent_answers: no email, settled 5 minutes).
+  // Each answer, and each later change to it, goes out once.
+  const REASON: Record<string, string> = { price: '價格', feature: '少了功能', bug: '遇到問題', notneeded: '暫時用不到', other: '其他原因' };
+  const BACK: Record<string, string> = { yes: '會', maybe: '也許', no: '不會' };
+  for (const a of g.winback) {
+    const note = a.comment ? `／「${String(a.comment).replace(/\s+/g, ' ').slice(0, 120)}」` : '';
+    out.push({ key: `winback-${a.k}-${Date.parse(a.updated_at)}`,
+      text: `💌 挽回信回覆（${name(a.product_id)}${a.is_test ? '・測試' : ''}）：${REASON[a.reason] || '沒選原因'}／會回來：${BACK[a.comeback] || '沒選'}${note}` });
   }
   // Syncs that stopped. App numbers push every minute; Sentry runs every 2 minutes, Meta hourly.
   const syncs = Object.entries((g.cfg.sync?.sources || {}) as Record<string, { at: number }>).map(([k, v]) => [`App 數字（${name(k)}）`, v.at, 30 * 60_000] as const);

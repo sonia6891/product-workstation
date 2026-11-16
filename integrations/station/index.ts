@@ -17,7 +17,7 @@ const cors = {
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const REPORT_URL = `${URL_}/functions/v1/station`;
 // Same table as STATION_REPO in index.html; a product doc can name its own `repo`.
-const STATION_REPO: Record<string, string> = { 'meow-work': 'sonia6891/meow-work-app', remindcat: 'sonia6891/RemindCat' };
+const STATION_REPO: Record<string, string> = { 'meow-work': 'sonia6891/meow-work-app', remindcat: 'sonia6891/RemindCat', maozhen: 'sonia6891/MaoZhen' };
 const BUSY = ['queued', 'working'];
 const HOUR = 3_600_000;
 

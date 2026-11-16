@@ -70,7 +70,13 @@ Deno.serve(async () => {
       const name = `stats/installs/installs_${PACKAGE}_${ym}_country.csv`;
       const r = await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}?alt=media`, { headers: { Authorization: `Bearer ${t}` } });
       if (r.status === 404) continue;
-      if (!r.ok) return Response.json({ ok: false, error: `storage_${r.status}`, file: name }, { status: 502 });
+      if (!r.ok) {
+        // Tell "no permission at all" apart from "this month's file isn't there yet" (without list rights Google
+        // answers 403 for both): list what the bucket holds under stats/installs/.
+        const l = await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o?prefix=${encodeURIComponent("stats/installs/")}&maxResults=50`, { headers: { Authorization: `Bearer ${t}` } });
+        const listed = l.ok ? ((await l.json()).items || []).map((o: any) => String(o.name)).filter((n: string) => n.includes(PACKAGE)) : `list_${l.status}`;
+        return Response.json({ ok: false, error: `storage_${r.status}`, file: name, listed }, { status: 502 });
+      }
       rows.push(...parse(decode(await r.arrayBuffer()))); files.push(name);
     }
     // One row per day and country (the file can list a country twice when Google renames it).

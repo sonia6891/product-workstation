@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light">
+<title>想聽聽您的想法</title>
+<style>
+  /* 電腦：橫式（貓在右、原因按鈕一排五個）；手機：直式（貓在上、按鈕兩個一排） */
+  @media only screen and (max-width:620px) {
+    .wrap { padding:16px 10px !important; }
+    .pad { padding-left:20px !important; padding-right:20px !important; }
+    .col-text, .col-cat { width:100% !important; max-width:100% !important; }
+    .hero { width:170px !important; height:auto !important; }
+    .btn { width:46% !important; }
+    .btn-wide { width:94% !important; }
+    .sig-cat { width:88px !important; height:auto !important; }
+    .sig-td { width:92px !important; }
+    .sig-text { font-size:15px !important; }
+    .h1 { font-size:22px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f3e6cf;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">注意到您關掉了自動續訂，想親自問問您的想法 🐾</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3e6cf;">
+<tr><td align="center" class="wrap" style="padding:32px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:680px;font-family:-apple-system,'PingFang TC','Noto Sans TC','Microsoft JhengHei',sans-serif;color:#4a3426;">
+
+  <!-- 頂部：圖示＋名稱 -->
+  <tr><td align="center" style="padding:0 0 18px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:10px;"><img src="img/icon.png" width="40" height="40" alt="" style="display:block;border-radius:10px;"></td>
+      <td style="font-size:18px;font-weight:800;letter-spacing:1px;color:#4a3426;">喵的，又要上班了</td>
+    </tr></table>
+  </td></tr>
+
+  <!-- 主卡片（縫線邊框） -->
+  <tr><td style="background:#fffaf0;border:2px dashed #c9a57a;border-radius:24px;padding:0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+
+      <!-- 開頭：電腦是左字右貓；手機貓在上 -->
+      <tr><td class="pad" dir="rtl" style="padding:28px 36px 6px;font-size:0;text-align:center;">
+        <div class="col-cat" dir="ltr" style="display:inline-block;vertical-align:middle;width:100%;max-width:210px;text-align:center;">
+          <img class="hero" src="img/hero.png" width="190" height="230" alt="抱著筆記本、準備聽您說的上班喵" style="display:inline-block;width:190px;height:230px;">
+        </div>
+        <div class="col-text" dir="ltr" style="display:inline-block;vertical-align:middle;width:100%;max-width:390px;text-align:left;font-size:16px;line-height:1.85;">
+          <div style="display:inline-block;background:#b63a32;color:#fff;font-size:13px;font-weight:700;padding:5px 14px;border-radius:999px;letter-spacing:1px;margin:6px 0 12px;">來自開發者的一封信</div>
+          <p class="h1" style="margin:0 0 10px;font-size:24px;font-weight:800;">嗨，您好！</p>
+          <p style="margin:0 0 12px;">我是 Sonia，《喵的，又要上班了》的獨立開發者。</p>
+          <p style="margin:0 0 12px;">首先，真的很謝謝您願意下載、試用我做的 App！❤️</p>
+        </div>
+      </td></tr>
+
+      <tr><td class="pad" style="padding:6px 36px 0;font-size:16px;line-height:1.85;">
+        <p style="margin:0 0 14px;">注意到您最近選擇關閉訂閱的自動續訂，完全沒關係！只是想親自寫封信，了解是不是有什麼地方沒有符合您的期待。</p>
+      </td></tr>
+
+      <!-- 原因按鈕：電腦一排五個；手機兩個一排 -->
+      <tr><td class="pad" style="padding:6px 28px 4px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f6ead3;border-radius:18px;">
+          <tr><td style="padding:18px 18px 8px;font-size:16px;font-weight:800;color:#6b4a33;text-align:center;">是因為哪一個呢？點一下告訴我 👇</td></tr>
+          <tr><td align="center" style="padding:4px 8px 16px;font-size:0;">
+            <a class="btn" href="https://meow.pocketjoystudio.com/f?t={{TOKEN}}&amp;r=price" style="display:inline-block;width:104px;margin:4px;background:#fffaf0;border:1.5px solid #d9bf9a;border-radius:14px;padding:12px 0;text-align:center;color:#4a3426;text-decoration:none;font-size:15px;font-weight:700;">💰 價格</a>
+            <a class="btn" href="https://meow.pocketjoystudio.com/f?t={{TOKEN}}&amp;r=feature" style="display:inline-block;width:104px;margin:4px;background:#fffaf0;border:1.5px solid #d9bf9a;border-radius:14px;padding:12px 0;text-align:center;color:#4a3426;text-decoration:none;font-size:15px;font-weight:700;">🧩 少了功能</a>
+            <a class="btn" href="https://meow.pocketjoystudio.com/f?t={{TOKEN}}&amp;r=bug" style="display:inline-block;width:104px;margin:4px;background:#fffaf0;border:1.5px solid #d9bf9a;border-radius:14px;padding:12px 0;text-align:center;color:#4a3426;text-decoration:none;font-size:15px;font-weight:700;">🐛 遇到問題</a>
+            <a class="btn" href="https://meow.pocketjoystudio.com/f?t={{TOKEN}}&amp;r=notneeded" style="display:inline-block;width:104px;margin:4px;background:#fffaf0;border:1.5px solid #d9bf9a;border-radius:14px;padding:12px 0;text-align:center;color:#4a3426;text-decoration:none;font-size:15px;font-weight:700;">😴 暫時用不到</a>
+            <a class="btn btn-wide" href="https://meow.pocketjoystudio.com/f?t={{TOKEN}}&amp;r=other" style="display:inline-block;width:104px;margin:4px;background:#fffaf0;border:1.5px solid #d9bf9a;border-radius:14px;padding:12px 0;text-align:center;color:#4a3426;text-decoration:none;font-size:15px;font-weight:700;">💬 其他原因</a>
+          </td></tr>
+        </table>
+      </td></tr>
+
+      <tr><td class="pad" style="padding:20px 36px 0;font-size:16px;line-height:1.85;">
+        <p style="margin:0 0 14px;">不管是什麼原因，我都很希望聽到您的真實想法。因為這款 App 還有很多進步的空間，而每一個回饋，對我這樣的小小獨立開發者來說都非常珍貴。</p>
+        <p style="margin:0 0 14px;">如果您願意分享，只要<b>直接回覆這封信</b>就好，我都會親自閱讀。</p>
+        <p style="margin:0 0 6px;">不管未來還會不會繼續使用，都很謝謝您曾經給這隻上班喵一個機會。</p>
+      </td></tr>
+
+      <!-- 祝福＋簽名 -->
+      <tr><td class="pad" style="padding:10px 30px 26px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td class="sig-text" valign="middle" style="padding-left:6px;font-size:16px;line-height:1.8;">
+            <p style="margin:0 0 12px;font-weight:700;color:#b63a32;">祝您每天上班順順利利，<br>薪水越來越多！🐾</p>
+            <p style="margin:0;font-weight:800;font-size:17px;">Sonia</p>
+            <p style="margin:0;font-size:13px;color:#8a6d55;">《喵的，又要上班了》獨立開發者</p>
+          </td>
+          <td class="sig-td" width="140" valign="bottom" align="right"><img class="sig-cat" src="img/payday.png" width="130" height="129" alt="抱著薪水歡呼的上班喵" style="display:block;width:130px;height:129px;"></td>
+        </tr></table>
+      </td></tr>
+
+    </table>
+  </td></tr>
+
+  <!-- 頁尾 -->
+  <tr><td align="center" style="padding:18px 20px 0;font-size:12px;line-height:1.7;color:#8a6d55;">
+    如果不希望再收到這類信件，只要回覆「不用了」，之後就不會再寄送。<br>
+    Pocket Joy Studio
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

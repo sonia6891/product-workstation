@@ -191,3 +191,27 @@ select jsonb_build_object(
 )
 $fn$;
 revoke execute on function workstation.export_subs() from public, anon, authenticated;
+
+-- 挽回信 list (see winback.sql): everyone whose auto-renew is off right now, with the email to write to. Deleted
+-- accounts, accounts without an email and the developer's own accounts drop out. push() sends it once an hour.
+create or replace function workstation.export_winback() returns jsonb
+language sql stable set search_path = '' as $fn$
+with ev as (select * from workstation.store_events()),
+last_renew as (
+  select distinct on (otid) otid, subtype, created_at, platform
+  from ev where event_type = 'DID_CHANGE_RENEWAL_STATUS' order by otid, created_at desc
+),
+offs as (
+  select l.otid, l.created_at off_at, l.platform,
+    (select e.user_id from ev e where e.otid = l.otid and e.user_id is not null order by e.created_at limit 1) uid
+  from last_renew l where l.subtype = 'AUTO_RENEW_DISABLED'
+    -- someone who deleted their account once (their store notices were redacted) is not written to
+    and not exists (select 1 from public.store_subscription_events s where s.original_transaction_id = l.otid and s.raw ? 'redacted_after_account_deletion')
+)
+select coalesce(jsonb_agg(jsonb_build_object(
+  'account', upper(left(md5(o.uid::text), 6)), 'email', lower(u.email),
+  'platform', case o.platform when 'google_play' then 'android' else 'ios' end, 'off_at', o.off_at) order by o.off_at), '[]'::jsonb)
+from offs o join auth.users u on u.id = o.uid
+where u.email is not null and o.uid not in (select d.user_id from public.app_developer_accounts d)
+$fn$;
+revoke execute on function workstation.export_winback() from public, anon, authenticated;

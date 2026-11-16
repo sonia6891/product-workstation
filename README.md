@@ -41,7 +41,7 @@ Edge function `sentry-sync`（原始碼 `integrations/sentry-sync/index.ts`）�
 - 在 Sentry 標成已解決（或 90 天沒再發生）→ 這裡自動變「已解決」；標了已解決之後又再發生 → 自動回到「待處理」。
 - 標成「已解決」的 Bug 會從清單移除：資料庫觸發器把它搬到 `solved`（`integrations/solved.sql`，網頁不顯示）。Sentry 的錯誤之後又發生，會帶著原本的紀錄自動回到「待處理」。要手動救回一筆，見 `solved.sql` 開頭的說明。
 - 站長修好的也會自動變「已解決」：站長回報修好（修正已經在 main 上，或它的 PR 已合併），App Store 上已經有比出錯那版更新的版本（用 Apple 公開查詢，產品要填 App Store ID），而且新版上架後沒再發生。Bug 視窗會寫是哪一版上架後自動標的。
-- 目前來源（org `sole-proprietorship-jo`）：喵的，又要上班了（project `meow-work-app`）、提醒喵（project `remindcat`）、職缺體檢（project `job-check`，App 要出含 Sentry 的新版才會有資料）。要加其他 App，在函式的 `SOURCES` 加一行。
+- 目前來源（org `sole-proprietorship-jo`）：喵的，又要上班了（project `meow-work-app`）、提醒喵（project `remindcat`）、貓鎮（project `maozhen`）。職缺體檢（project `job-check`，App 要出含 Sentry 的新版才會有資料）。要加其他 App，在函式的 `SOURCES` 加一行。
 
 需要 Supabase secret `SENTRY_AUTH_TOKEN`（Sentry → Settings → Auth Tokens，只勾 Read 權限）。沒有權杖時 Bug 追蹤頁會顯示「尚未啟用」。暫停同步：`select cron.unschedule('sentry-sync');`
 
@@ -78,12 +78,23 @@ Edge function `alerts`（原始碼 `integrations/alerts/index.ts`）每 15 分�
 - 異常通知（8 點到 23 點，半夜發生的早上 8 點再送）：新的 P0 Bug、修好又發生的 Bug、今天廣告費已經超過平常兩倍、同步停了（App 數字 30 分鐘、Sentry 2 小時、Meta 3 小時沒成功）。每件只通知一次，同一輪的合併成一則。
 - 每週回顧：週一 9 點後送一次，上週（一到日）對比前一週：下載、新訂閱、營收、廣告費、每個新付費用戶成本、關閉續訂、新用戶隔天回來比例、新 Bug／修好幾個、評論。
 - App Store 評論：新的 1–2 星評論（3 天內）會通知一次；日報也會列昨天的新評論數。
+- 挽回信回覆：有人在挽回信的頁面回答（或改答案）會通知一次，測試信標「測試」（見下面「挽回信」）。
 - 只推給擁有者一個人（LINE 的單一對象推播），加官方帳號好友的其他人不會收到。
 - 用到 Supabase secret `LINE_CHANNEL_ACCESS_TOKEN` 和 `threads_config.line_user_id`（串文雷達已經設好），呼叫時要帶 `threads_config.cron_secret`。LINE 免費方案每月 200 則推播，跟串文雷達共用。
 - 工作站專用的 LINE 官方帳號（選用）：放進 Supabase secret `WORKSTATION_LINE_TOKEN`（那個帳號的 Messaging API channel access token）之後，日報、週報、通知都改由它發，額度也跟串文雷達分開。新帳號要建在跟串文雷達同一個 Provider 底下（LINE 的使用者 ID 每個 Provider 不同；不同的話另外放 `WORKSTATION_LINE_USER_ID`），而且擁有者要先加它好友。新帳號發不出去時（還沒加好友、ID 不對）會自動改用原本的帳號發，`cfg/alerts` 的 `via` 會寫是哪一個帳號發的。
 - 其他來源也走同一個帳號：串文雷達（`threads-radar`）有 `WORKSTATION_LINE_TOKEN` 時改由「產品工作站」發；「喵的，又要上班了」每小時的變動通知沒有自己的權杖，由它的 `line-push` 把內容交給這裡的 edge function `line-relay`（`integrations/line-relay/index.ts`，用推送金鑰驗證，`public.check_ingest_key`）代發。權杖只放在這個專案。
 - 版面：日報、週報、通知都是 LINE 卡片（Flex），跟喵管家的每小時通知同一套皮革標題＋紙卡表格（照 meow-work 的 `public.meow_flex_dashboard` 做）；LINE 不接受卡片時自動改發純文字。再發一次看版面：網址加 `?test=1`（`&only=weekly`、`&only=alerts` 換成週報或通知），不會動到已發送的紀錄。
 - 送過什麼記在 `cfg/alerts`。不送只看內容：呼叫時網址加 `?dry=1`。暫停：`select cron.unschedule('alerts');`
+
+## 挽回信（關閉自動續訂的人）
+
+寫信問關掉自動續訂的人為什麼，從 sonia@pocketjoystudio.com 寄出（Resend）。所有 App 共用這一套，都在工作站：
+
+- 名單：每個 App 每小時把「最後一次是關掉自動續訂」的人送過來（喵的，又要上班了：`integrations/source-meow-work.sql` 的 `workstation.export_winback()`，跟著 `push()` 每小時那次送到 `public.ingest_winback`）。刪了帳號、沒有 Email、開發者自己的帳號不送。存在 `private.winback_recipients`（`integrations/winback.sql`），網頁讀不到 Email。
+- 寄信：不會自動寄。到 **退訂紀錄 → 挽回信** 按「寄挽回信給 N 位」（要按兩次，只有擁有者和編輯看得到），由 edge function `winback-send`（`integrations/winback-send/`）寄給還沒寄過的人；同一個人同一封只會寄一次。要 Supabase secret `RESEND_API_KEY`。
+- 信的內容：每個產品一封，放在 `integrations/winback-send/letters/`（`meow-work.ts` 的 html 是從 `emails/winback-1.html` 產生的）。新的 App 要寄，先在那裡加一封信、在 `index.html` 的 `WINBACK_LETTERS` 加上產品 ID。
+- 回答：信裡的按鈕連到 meow.pocketjoystudio.com/f（Cloudflare Worker，`integrations/winback-page/worker.js`），頁面把答案送到 edge function `winback-feedback`，存在 `private.winback_responses`。答案顯示在退訂紀錄頁，也會用 LINE 通知（`alerts`）。
+- 直接回信的內容會寄到 sonia@ 信箱（不在工作站裡）。每封信每人只寄一次，回「不用了」的人不會再收到同一封。
 
 ## 外觀
 

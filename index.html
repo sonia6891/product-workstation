@@ -1554,7 +1554,7 @@ const SENTRY_ERR = { no_token: '還沒放入 Sentry 權杖', token_rejected: 'Se
 // The count is the bugs still open in this list, not Sentry's own count (which keeps the ones marked 已解決 here).
 function sentryBarHTML() {
   const z = S.sentry; if (!z) return '';
-  if (z.error) return `<div class="sbar"><b>Sentry 自動回報</b><span class="bad">尚未啟用：${esc(SENTRY_ERR[z.error] || z.error)}</span><span>放入權杖後，喵的又要上班了、提醒喵的錯誤會自動出現在這裡。</span></div>`;
+  if (z.error) return `<div class="sbar"><b>Sentry 自動回報</b><span class="bad">尚未啟用：${esc(SENTRY_ERR[z.error] || z.error)}</span><span>放入權杖後，喵的又要上班了、提醒喵、貓鎮的錯誤會自動出現在這裡。</span></div>`;
   const parts = Object.entries(z.sources || {}).map(([p, v]) => v.ok ? `<span>${esc(pName(p))}：<b>${[...S.issues.values()].filter(i => i.type === 'bug' && i.product === p && i.sentry && isOpen(i.status)).length}</b> 個未解決錯誤</span>` : `<span class="bad">${esc(pName(p))}：同步失敗（${esc(SENTRY_ERR[v.error] || v.error)}）</span>`).join('');
   return `<div class="sbar"><b>Sentry 自動回報</b>${parts}<span class="hint">每 2 分鐘同步・最後 ${minsAgo(z.at)}</span></div>`;
 }
@@ -1642,7 +1642,7 @@ function issueModal(type, id) {
 /* ================= 站長 (cloud Claude, see README) ================= */
 // The repo 站長 works in, per product. A product can name its own with a `repo` field. Keep in sync with
 // STATION_REPO in integrations/station/index.ts.
-const STATION_REPO = { 'meow-work': 'sonia6891/meow-work-app', remindcat: 'sonia6891/RemindCat' };
+const STATION_REPO = { 'meow-work': 'sonia6891/meow-work-app', remindcat: 'sonia6891/RemindCat', maozhen: 'sonia6891/MaoZhen' };
 const stationRepo = pid => S.products.get(pid)?.repo || STATION_REPO[pid] || '';
 // The cloud task 站長 (claude.ai/code/routines). The owner saves its API token in 設定 → 站長.
 const STATION_ROUTINE = 'trig_01DCZDusxqi6hevT241db7g4';
@@ -1747,6 +1747,53 @@ function moneyText(obj) {
   if (!e.length) return '—';
   return e.map(([c, v]) => { try { const s = nf('m' + c, { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(+v); return c === 'TWD' ? s.replace(/^\$/, 'NT$') : s; } catch (x) { return `${c} ${v}`; } }).join(' + ');
 }
+/* 挽回信 (integrations/winback.sql): each app pushes, hourly, who turned auto-renew off; the letter goes out only when
+   someone presses 寄挽回信 here (edge function winback-send). public.winback_board never returns an address or a token. */
+const WINBACK_LETTERS = new Set(['meow-work']); // products with a letter in integrations/winback-send/letters
+const WB_REASON = { price: '💰 價格', feature: '🧩 少了功能', bug: '🐛 遇到問題', notneeded: '😴 暫時用不到', other: '💬 其他原因' };
+const WB_BACK = { yes: '會', maybe: '也許', no: '不會' };
+const WB_ERR = { no_letter: '這個產品還沒有寫好挽回信', resend_not_configured: '寄信服務還沒設定（工作站缺 RESEND_API_KEY）', no_permission: '只有擁有者和編輯可以寄信' };
+let wb = { rows: null, at: 0, busy: false, err: '' };
+async function loadWinback(force) {
+  if (!sb || wb.busy || (!force && Date.now() - wb.at < 60e3)) return;
+  wb.busy = true;
+  const { data, error } = await sb.rpc('winback_board');
+  wb = { rows: error ? (wb.rows || []) : (data || []), at: Date.now(), busy: false, err: error ? error.message : '' };
+  if (UI.view === 'churn') renderAll();
+}
+function winbackHTML() {
+  loadWinback();
+  if (!wb.rows) return `<section class="card span12"><header><h3>挽回信</h3></header><p class="hint">讀取中…</p></section>`;
+  const all = wb.rows.filter(r => !String(r.campaign).startsWith('test') && S.products.has(r.product_id) && (UI.product === 'all' || r.product_id === UI.product));
+  const pids = [...new Set([...all.map(r => r.product_id), ...[...WINBACK_LETTERS].filter(p => S.products.has(p) && (UI.product === 'all' || p === UI.product))])];
+  if (!pids.length) return '';
+  const showP = UI.product === 'all' || pids.length > 1;
+  const lines = pids.map(pid => {
+    const rs = all.filter(r => r.product_id === pid), sent = rs.filter(r => r.sent_at), ans = rs.filter(r => r.answered_at);
+    const pending = rs.filter(r => r.active && !r.sent_at).length;
+    const btn = canWrite && WINBACK_LETTERS.has(pid) && pending
+      ? `<button class="btn sm primary" data-act="wbsend" data-id="${esc(pid)}" data-n="${pending}">寄挽回信給 ${pending} 位</button>` : '';
+    const note = !WINBACK_LETTERS.has(pid) ? '<span class="hint">還沒有寫好這個產品的信</span>' : pending ? '' : '<span class="hint">沒有等著寄的人</span>';
+    return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 10px">
+      ${showP ? `<b><i class="dot" style="background:${pColor(pid)}"></i> ${esc(pName(pid))}</b>` : ''}
+      <span>已寄 <b>${sent.length}</b> 封・回覆 <b>${ans.length}</b> 位・等著寄 <b>${pending}</b> 位</span>${btn}${note}</div>`;
+  }).join('');
+  const shown = all.filter(r => r.sent_at || r.active)
+    .sort((a, b) => String(b.answered_at || '').localeCompare(String(a.answered_at || '')) || String(b.sent_at || '').localeCompare(String(a.sent_at || '')));
+  const rows = shown.slice(0, 300).map(r => `<tr>
+      ${showP ? `<td><i class="dot" style="background:${pColor(r.product_id)}"></i> ${esc(pName(r.product_id))}</td>` : ''}
+      <td class="mono hint">${esc(r.account || '—')}${r.platform ? `<span class="sample-tag">${r.platform === 'android' ? '安卓' : '蘋果'}</span>` : ''}</td>
+      <td class="mono">${r.off_at ? whenText(r.off_at) : '—'}</td>
+      <td class="mono">${r.sent_at ? whenText(r.sent_at) : '<span class="hint">還沒寄</span>'}</td>
+      <td>${r.answered_at ? (WB_REASON[r.reason] || '<span class="hint">沒選</span>') : '<span class="hint">—</span>'}</td>
+      <td>${r.answered_at ? (WB_BACK[r.comeback] || '<span class="hint">沒選</span>') : '<span class="hint">—</span>'}</td>
+      <td>${r.comment ? esc(r.comment) : '<span class="hint">—</span>'}</td></tr>`).join('');
+  const table = shown.length ? `<div class="tw"><table class="t"><thead><tr>${showP ? '<th>產品</th>' : ''}<th>帳號</th><th>關閉續訂</th><th>寄出</th><th>原因</th><th>會回來嗎</th><th>留言</th></tr></thead><tbody>${rows}</tbody></table></div>` : '';
+  return `<section class="card span12"><header><h3>挽回信<small>關掉自動續訂的人，問他們為什麼</small></h3></header>
+    ${lines}
+    <p class="hint" style="margin:0 0 10px">名單由 App 每小時送來（已刪帳號、沒有 Email 的人不在內）；不會自動寄，按了按鈕才寄，每人只會收到一封。回覆會出現在下面，也會用 LINE 通知。${wb.err ? `<br>讀取失敗：${esc(wb.err)}` : ''}</p>
+    ${table}</section>`;
+}
 function renderChurn(el) {
   if (!S.ready) { el.innerHTML = loadingHTML(); return; }
   const P = period();
@@ -1801,6 +1848,7 @@ function renderChurn(el) {
       <p class="hint" style="margin:0 0 8px">「關閉自動續訂」不是退款：這一期的錢已經付了，Pro 會用到期滿，到期那天才會再出現一筆「到期失效」。退款是用戶另外向 Apple 申請的。</p>
       <p class="hint" style="margin:0">「帳號」是 App 內部帳號的代碼，同一個代碼就是同一個人；Apple 不提供姓名或 Email。已付金額是用戶付的價錢，未扣 Apple 抽成。</p>
       ${hasUsage ? '<p class="hint" style="margin:8px 0 0">「最後使用」是這個帳號最後一次在 App 裡留下紀錄的日子（同步資料、備份、AI 助理、語音輸入）；只打開看看、沒改東西不會留紀錄。比退訂那天晚，就標「之後還在用」。刪掉帳號的人追不到，顯示 —。</p>' : ''}</section>
+    ${winbackHTML()}
     <section class="card span12"><header><h3>明細<small>${evs.length} 筆${evs.length > 300 ? '・顯示最近 300 筆' : ''}</small></h3></header>${table}</section>
   </div>`;
 }
@@ -2305,6 +2353,19 @@ document.addEventListener('click', async e => {
   switch (a) {
     case 'status': return;
     case 'go': go(id); break;
+    case 'wbsend': { // press twice: the first press arms the button, the second sends
+      if (!el.classList.contains('armed')) {
+        el.classList.add('armed'); el.textContent = `再按一次，寄給 ${el.dataset.n} 位`;
+        clearTimeout(el._t); el._t = setTimeout(() => renderAll(), 5000); break;
+      }
+      clearTimeout(el._t); el.disabled = true; el.textContent = '寄信中…';
+      try {
+        const { data, error } = await sb.functions.invoke('winback-send', { body: { product: id } });
+        if (error) { let code = ''; try { code = (await error.context.json()).error; } catch (x) {} throw new Error(WB_ERR[code] || code || error.message); }
+        toast(data.failed ? `寄出 ${data.sent} 封，${data.failed} 封失敗` : `已寄出 ${data.sent} 封挽回信`, data.failed ? 'err' : undefined);
+      } catch (err) { toast('寄信失敗：' + err.message, 'err'); }
+      await loadWinback(true); renderAll(); break;
+    }
     case 'attnoff': el.disabled = true; setAttnOff({ ...attnOffNow(), [el.dataset.k]: Date.now() }); break;
     case 'attnback': setAttnOff({}); break;
     case 'fold': UI.fold = { ...UI.fold, [id]: !isFolded(id) }; saveUI(); renderAll(); break;

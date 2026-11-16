@@ -8,6 +8,7 @@ const SOURCES = [
   { product: 'meow-work', org: 'sole-proprietorship-jo', projectId: '4512394101325824', host: 'us.sentry.io' }, // meow-work-app
   { product: 'remindcat', org: 'sole-proprietorship-jo', projectId: '4512394069540864', host: 'us.sentry.io' },
   { product: 'job-check', org: 'sole-proprietorship-jo', projectId: '4512427170398208', host: 'us.sentry.io' },
+  { product: 'maozhen', org: 'sole-proprietorship-jo', projectId: '4512422132514816', host: 'us.sentry.io' },
 ];
 const isOpen = (s: string) => s !== 'done' && s !== 'wont';
 const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });

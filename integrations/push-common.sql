@@ -44,6 +44,13 @@ begin
       array[extensions.http_header('apikey', c.anon_key), extensions.http_header('Authorization', 'Bearer ' || c.anon_key)],
       'application/json', jsonb_build_object('p_key', c.ingest_key, 'p_product', c.product_id, 'p_snap', v_events)::text)::extensions.http_request);
   end if;
+  -- 挽回信 list (who to write to, with their email), only on the hourly full push, when this app exports it.
+  if p_days > 3 and to_regprocedure('workstation.export_winback()') is not null then
+    execute 'select workstation.export_winback()' into v_events;
+    perform extensions.http(('POST', c.url || '/rest/v1/rpc/ingest_winback',
+      array[extensions.http_header('apikey', c.anon_key), extensions.http_header('Authorization', 'Bearer ' || c.anon_key)],
+      'application/json', jsonb_build_object('p_key', c.ingest_key, 'p_product', c.product_id, 'p_rows', v_events)::text)::extensions.http_request);
+  end if;
   update workstation.config set last_status = r.status, last_body = left(r.content, 500), last_at = now() where id = 1;
   return r.status;
 end $fn$;
