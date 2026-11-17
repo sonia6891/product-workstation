@@ -68,6 +68,13 @@ function shipped(old: Record<string, any>, sentry: Record<string, any>, store: {
   const v = String(sentry.event?.release || '').split('@').pop()!.split('+')[0]; // meow-work@3.0+336 → 3.0
   return /^\d+(\.\d+)*$/.test(v) && newer(store.version, v) && sentry.lastSeen < store.at;
 }
+// The latest event came from a version older than the one now on the App Store: someone who hasn't updated yet.
+// Such an event doesn't reopen a solved bug (the fix may well be in the newer version); one from the current
+// version or newer does. Only when the event read is the latest one (its `seen` matches lastSeen).
+function oldBuild(sentry: Record<string, any>, store: { version: string } | null) {
+  const v = String(sentry.event?.release || '').split('@').pop()!.split('+')[0];
+  return !!store && sentry.event?.seen === sentry.lastSeen && /^\d+(\.\d+)*$/.test(v) && newer(store.version, v);
+}
 
 // Postgres jsonb keeps object keys in its own order, so compare with sorted keys (else every row looks changed).
 const stable = (v: unknown): unknown => Array.isArray(v) ? v.map(stable)
@@ -126,6 +133,11 @@ Deno.serve(async () => {
           if (e) sentry.event = { ...e, seen: sentry.lastSeen };
           else if (prevEvent) sentry.event = prevEvent;
         } else if (prevEvent) sentry.event = prevEvent;
+        if (was && oldBuild(sentry, await storeNow())) {
+          // Happened again, but on an old version: stays solved; its latest event is kept so it isn't read again.
+          rows.push(row(id, { ...was, sentry }, 'solved'));
+          continue;
+        }
         if (was) {
           // It happened again after it was solved → back in the list as 待處理, with its history.
           const { solvedAt: _s, autoSolved: _a, ...back } = was;
@@ -139,7 +151,7 @@ Deno.serve(async () => {
           continue;
         }
         // Marked solved here (by hand or by `shipped`) but it happened again afterwards → back to 待處理. 不處理 stays as the owner set it.
-        const regressed = old.status === 'done' && sentry.lastSeen > (old.updatedAt || 0);
+        const regressed = old.status === 'done' && sentry.lastSeen > (old.updatedAt || 0) && !oldBuild(sentry, await storeNow());
         const fixed = !regressed && ['new', 'doing', 'verify'].includes(old.status) && ['merged', 'reported'].includes(old.station?.stage)
           && shipped(old, sentry, await storeNow());
         if (!regressed && !fixed && same(old.sentry, sentry) && old.title === i.title) continue;
