@@ -17,11 +17,15 @@ create table if not exists private.winback_recipients (
   email text not null,
   platform text,                -- ios | android
   off_at timestamptz,           -- when they turned auto-renew off
+  app_version text,             -- the App version the account is using (last reported), refreshed hourly
+  version_at timestamptz,       -- when the app reported that version
   active boolean not null default true, -- false once the app no longer lists them (renewal back on, account deleted)
   sent_at timestamptz,
   created_at timestamptz not null default now(),
   unique (product_id, campaign, email)
 );
+alter table private.winback_recipients add column if not exists app_version text, add column if not exists version_at timestamptz;
+
 create table if not exists private.winback_responses (
   token text primary key references private.winback_recipients(token) on delete cascade,
   reason text check (reason in ('price', 'feature', 'bug', 'notneeded', 'other')),
@@ -32,7 +36,7 @@ create table if not exists private.winback_responses (
 );
 revoke all on private.winback_recipients, private.winback_responses from public, anon, authenticated;
 
--- Source apps: the people to write to right now. Rows: [{account, email, platform, off_at}].
+-- Source apps: the people to write to right now. Rows: [{account, email, platform, off_at, app_version?, version_at?}].
 create or replace function public.ingest_winback(p_key text, p_product text, p_rows jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $fn$
 declare v_new int; v_gone int;
@@ -43,17 +47,20 @@ begin
   if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 5000 then
     raise exception 'invalid rows' using errcode = '22023';
   end if;
-  create temp table if not exists _wb (account text, email text, platform text, off_at timestamptz) on commit drop;
+  create temp table if not exists _wb (account text, email text, platform text, off_at timestamptz, app_version text, version_at timestamptz) on commit drop;
   truncate _wb;
-  insert into _wb select distinct on (lower(btrim(x.email))) x.account, lower(btrim(x.email)), x.platform, x.off_at
-    from jsonb_to_recordset(p_rows) x(account text, email text, platform text, off_at timestamptz)
+  insert into _wb select distinct on (lower(btrim(x.email))) x.account, lower(btrim(x.email)), x.platform, x.off_at,
+      nullif(left(btrim(x.app_version), 32), ''), x.version_at
+    from jsonb_to_recordset(p_rows) x(account text, email text, platform text, off_at timestamptz, app_version text, version_at timestamptz)
     where x.email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' order by lower(btrim(x.email)), x.off_at desc;
   with up as (
-    insert into private.winback_recipients as t (product_id, campaign, account, email, platform, off_at, active)
-    select p_product, 'winback-1', w.account, w.email, w.platform, w.off_at, true from _wb w
+    insert into private.winback_recipients as t (product_id, campaign, account, email, platform, off_at, app_version, version_at, active)
+    select p_product, 'winback-1', w.account, w.email, w.platform, w.off_at, w.app_version, w.version_at, true from _wb w
     on conflict (product_id, campaign, email) do update set account = excluded.account, platform = excluded.platform,
-      off_at = excluded.off_at, active = true
-    where (t.account, t.platform, t.off_at, t.active) is distinct from (excluded.account, excluded.platform, excluded.off_at, true)
+      off_at = excluded.off_at, active = true,
+      app_version = coalesce(excluded.app_version, t.app_version), version_at = coalesce(excluded.version_at, t.version_at)
+    where (t.account, t.platform, t.off_at, t.active, t.app_version, t.version_at) is distinct from
+      (excluded.account, excluded.platform, excluded.off_at, true, coalesce(excluded.app_version, t.app_version), coalesce(excluded.version_at, t.version_at))
     returning (xmax = 0) ins
   ) select count(*) filter (where ins) into v_new from up;
   update private.winback_recipients t set active = false
@@ -104,14 +111,16 @@ revoke execute on function public.winback_pending(text, text), public.winback_ma
   public.winback_answer(text, text, text, text), public.winback_recent_answers() from public, anon, authenticated;
 
 -- 退訂紀錄 page: who was written to and what they answered. Never the email or the token.
+drop function if exists public.winback_board();
 create or replace function public.winback_board()
 returns table (product_id text, campaign text, account text, platform text, off_at timestamptz, active boolean,
-  sent_at timestamptz, reason text, comeback text, comment text, answered_at timestamptz)
+  sent_at timestamptz, reason text, comeback text, comment text, answered_at timestamptz, app_version text, version_at timestamptz)
 language plpgsql stable security definer set search_path = '' as $fn$
 begin
   if not private.can_read() then raise exception 'not allowed' using errcode = '42501'; end if;
   return query
-    select r.product_id, r.campaign, r.account, r.platform, r.off_at, r.active, r.sent_at, a.reason, a.comeback, a.comment, a.updated_at
+    select r.product_id, r.campaign, r.account, r.platform, r.off_at, r.active, r.sent_at, a.reason, a.comeback, a.comment, a.updated_at,
+      r.app_version, r.version_at
     from private.winback_recipients r left join private.winback_responses a on a.token = r.token
     order by coalesce(a.updated_at, r.sent_at, r.off_at) desc nulls last;
 end $fn$;

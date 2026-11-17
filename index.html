@@ -1778,20 +1778,27 @@ function winbackHTML() {
       ${showP ? `<b><i class="dot" style="background:${pColor(pid)}"></i> ${esc(pName(pid))}</b>` : ''}
       <span>已寄 <b>${sent.length}</b> 封・回覆 <b>${ans.length}</b> 位・等著寄 <b>${pending}</b> 位</span>${btn}${note}</div>`;
   }).join('');
+  // Waiting to be mailed first, then answered (newest first), then mailed (newest first).
+  const rank = r => !r.sent_at ? 0 : r.answered_at ? 1 : 2;
   const shown = all.filter(r => r.sent_at || r.active)
-    .sort((a, b) => String(b.answered_at || '').localeCompare(String(a.answered_at || '')) || String(b.sent_at || '').localeCompare(String(a.sent_at || '')));
+    .sort((a, b) => rank(a) - rank(b) || String(b.answered_at || '').localeCompare(String(a.answered_at || ''))
+      || String(b.sent_at || '').localeCompare(String(a.sent_at || '')) || String(b.off_at || '').localeCompare(String(a.off_at || '')));
+  const verCell = r => r.app_version
+    ? `<span class="mono">${esc(r.app_version)}</span>${r.version_at ? `<span class="hint" style="margin-left:4px">${new Date(r.version_at).getMonth() + 1}/${new Date(r.version_at).getDate()}</span>` : ''}`
+    : '<span class="hint">不明</span>';
   const rows = shown.slice(0, 300).map(r => `<tr>
       ${showP ? `<td><i class="dot" style="background:${pColor(r.product_id)}"></i> ${esc(pName(r.product_id))}</td>` : ''}
       <td class="mono hint">${esc(r.account || '—')}${r.platform ? `<span class="sample-tag">${r.platform === 'android' ? '安卓' : '蘋果'}</span>` : ''}</td>
+      <td>${verCell(r)}</td>
       <td class="mono">${r.off_at ? whenText(r.off_at) : '—'}</td>
-      <td class="mono">${r.sent_at ? whenText(r.sent_at) : '<span class="hint">還沒寄</span>'}</td>
+      <td class="mono">${r.sent_at ? whenText(r.sent_at) : '<span class="pill st-open">還沒寄</span>'}</td>
       <td>${r.answered_at ? (WB_REASON[r.reason] || '<span class="hint">沒選</span>') : '<span class="hint">—</span>'}</td>
       <td>${r.answered_at ? (WB_BACK[r.comeback] || '<span class="hint">沒選</span>') : '<span class="hint">—</span>'}</td>
       <td>${r.comment ? esc(r.comment) : '<span class="hint">—</span>'}</td></tr>`).join('');
-  const table = shown.length ? `<div class="tw"><table class="t"><thead><tr>${showP ? '<th>產品</th>' : ''}<th>帳號</th><th>關閉續訂</th><th>寄出</th><th>原因</th><th>會回來嗎</th><th>留言</th></tr></thead><tbody>${rows}</tbody></table></div>` : '';
+  const table = shown.length ? `<div class="tw"><table class="t"><thead><tr>${showP ? '<th>產品</th>' : ''}<th>帳號</th><th>使用版本</th><th>關閉續訂</th><th>寄出</th><th>原因</th><th>會回來嗎</th><th>留言</th></tr></thead><tbody>${rows}</tbody></table></div>` : '';
   return `<section class="card span12"><header><h3>挽回信<small>關掉自動續訂的人，問他們為什麼</small></h3></header>
     ${lines}
-    <p class="hint" style="margin:0 0 10px">名單由 App 每小時送來（已刪帳號、沒有 Email 的人不在內）；不會自動寄，按了按鈕才寄，每人只會收到一封。回覆會出現在下面，也會用 LINE 通知。${wb.err ? `<br>讀取失敗：${esc(wb.err)}` : ''}</p>
+    <p class="hint" style="margin:0 0 10px">名單由 App 每小時送來（已刪帳號、沒有 Email 的人不在內）；不會自動寄，按了按鈕確認後才寄，每人只會收到一封。回覆會出現在下面，也會用 LINE 通知。「使用版本」是那個帳號最近一次回報的 App 版本（旁邊是回報日期），每小時更新；「不明」是對方的 App 還不會回報版本。${wb.err ? `<br>讀取失敗：${esc(wb.err)}` : ''}</p>
     ${table}</section>`;
 }
 function renderChurn(el) {
@@ -2353,18 +2360,25 @@ document.addEventListener('click', async e => {
   switch (a) {
     case 'status': return;
     case 'go': go(id); break;
-    case 'wbsend': { // press twice: the first press arms the button, the second sends
-      if (!el.classList.contains('armed')) {
-        el.classList.add('armed'); el.textContent = `再按一次，寄給 ${el.dataset.n} 位`;
-        clearTimeout(el._t); el._t = setTimeout(() => renderAll(), 5000); break;
-      }
-      clearTimeout(el._t); el.disabled = true; el.textContent = '寄信中…';
-      try {
-        const { data, error } = await sb.functions.invoke('winback-send', { body: { product: id } });
-        if (error) { let code = ''; try { code = (await error.context.json()).error; } catch (x) {} throw new Error(WB_ERR[code] || code || error.message); }
-        toast(data.failed ? `寄出 ${data.sent} 封，${data.failed} 封失敗` : `已寄出 ${data.sent} 封挽回信`, data.failed ? 'err' : undefined);
-      } catch (err) { toast('寄信失敗：' + err.message, 'err'); }
-      await loadWinback(true); renderAll(); break;
+    case 'wbsend': { // asks first in a dialog; only 寄出 there sends
+      const n = el.dataset.n;
+      openModal(`<h3 style="margin:0 0 10px">寄挽回信給 ${n} 位？</h3>
+        <p style="margin:0 0 8px">${esc(pName(id))}：還沒收過挽回信的 ${n} 位會各收到一封，從 sonia@pocketjoystudio.com 寄出。</p>
+        <p class="hint" style="margin:0 0 16px">寄出後無法收回；每個人只會收到一次。</p>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" data-close>取消</button><button class="btn primary" id="wb-go">寄出 ${n} 封</button></div>`, sheet => {
+        const go = sheet.querySelector('#wb-go');
+        go.addEventListener('click', async () => {
+          go.disabled = true; go.textContent = '寄信中…';
+          try {
+            const { data, error } = await sb.functions.invoke('winback-send', { body: { product: id } });
+            if (error) { let code = ''; try { code = (await error.context.json()).error; } catch (x) {} throw new Error(WB_ERR[code] || code || error.message); }
+            closeModal();
+            toast(data.failed ? `寄出 ${data.sent} 封，${data.failed} 封失敗` : `已寄出 ${data.sent} 封挽回信`, data.failed ? 'err' : undefined);
+          } catch (err) { go.disabled = false; go.textContent = `寄出 ${n} 封`; toast('寄信失敗：' + err.message, 'err'); }
+          await loadWinback(true); renderAll();
+        });
+      });
+      break;
     }
     case 'attnoff': el.disabled = true; setAttnOff({ ...attnOffNow(), [el.dataset.k]: Date.now() }); break;
     case 'attnback': setAttnOff({}); break;

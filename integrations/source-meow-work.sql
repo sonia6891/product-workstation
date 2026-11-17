@@ -210,8 +210,18 @@ offs as (
 )
 select coalesce(jsonb_agg(jsonb_build_object(
   'account', upper(left(md5(o.uid::text), 6)), 'email', lower(u.email),
-  'platform', case o.platform when 'google_play' then 'android' else 'ios' end, 'off_at', o.off_at) order by o.off_at), '[]'::jsonb)
+  'platform', case o.platform when 'google_play' then 'android' else 'ios' end, 'off_at', o.off_at,
+  'app_version', v.app_version, 'version_at', v.updated_at) order by o.off_at), '[]'::jsonb)
 from offs o join auth.users u on u.id = o.uid
+-- The version they use now: what the account last reported (user_app_versions, from the app version that reports it),
+-- else the version its push registration last saw (push_devices); same order as public.meow_user_app_version.
+left join lateral (
+  select nullif(split_part(x.app_version, '(', 1), '') app_version, x.updated_at
+  from (select a.app_version, a.updated_at, a.platform = 'web' web from public.user_app_versions a where a.user_id = o.uid
+        union all
+        select d.app_version, d.updated_at, false from public.push_devices d where d.user_id = o.uid and d.app_version is not null) x
+  order by x.web, x.updated_at desc limit 1
+) v on true
 where u.email is not null and o.uid not in (select d.user_id from public.app_developer_accounts d)
 $fn$;
 revoke execute on function workstation.export_winback() from public, anon, authenticated;

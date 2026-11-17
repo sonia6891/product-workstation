@@ -90,8 +90,8 @@ Edge function `alerts`（原始碼 `integrations/alerts/index.ts`）每 15 分�
 
 寫信問關掉自動續訂的人為什麼，從 sonia@pocketjoystudio.com 寄出（Resend）。所有 App 共用這一套，都在工作站：
 
-- 名單：每個 App 每小時把「最後一次是關掉自動續訂」的人送過來（喵的，又要上班了：`integrations/source-meow-work.sql` 的 `workstation.export_winback()`，跟著 `push()` 每小時那次送到 `public.ingest_winback`）。刪了帳號、沒有 Email、開發者自己的帳號不送。存在 `private.winback_recipients`（`integrations/winback.sql`），網頁讀不到 Email。
-- 寄信：不會自動寄。到 **退訂紀錄 → 挽回信** 按「寄挽回信給 N 位」（要按兩次，只有擁有者和編輯看得到），由 edge function `winback-send`（`integrations/winback-send/`）寄給還沒寄過的人；同一個人同一封只會寄一次。要 Supabase secret `RESEND_API_KEY`。
+- 名單：每個 App 每小時把「最後一次是關掉自動續訂」的人送過來（喵的，又要上班了：`integrations/source-meow-work.sql` 的 `workstation.export_winback()`，跟著 `push()` 每小時那次送到 `public.ingest_winback`）。刪了帳號、沒有 Email、開發者自己的帳號不送。存在 `private.winback_recipients`（`integrations/winback.sql`），網頁讀不到 Email。每個人也帶著「使用版本」：帳號最近回報的 App 版本（`user_app_versions`，沒有就用 `push_devices`），每小時更新；App 還不會回報版本的人顯示「不明」。
+- 寄信：不會自動寄。到 **退訂紀錄 → 挽回信** 按「寄挽回信給 N 位」，在跳出的視窗按「寄出」（只有擁有者和編輯看得到），由 edge function `winback-send`（`integrations/winback-send/`）寄給還沒寄過的人；同一個人同一封只會寄一次。要 Supabase secret `RESEND_API_KEY`。
 - 信的內容：每個產品一封，放在 `integrations/winback-send/letters/`（`meow-work.ts` 的 html 是從 `emails/winback-1.html` 產生的）。新的 App 要寄，先在那裡加一封信、在 `index.html` 的 `WINBACK_LETTERS` 加上產品 ID。
 - 回答：信裡的按鈕連到 meow.pocketjoystudio.com/f（Cloudflare Worker，`integrations/winback-page/worker.js`），頁面把答案送到 edge function `winback-feedback`，存在 `private.winback_responses`。答案顯示在退訂紀錄頁，也會用 LINE 通知（`alerts`）。
 - 直接回信的內容會寄到 sonia@ 信箱（不在工作站裡）。每封信每人只寄一次，回「不用了」的人不會再收到同一封。
