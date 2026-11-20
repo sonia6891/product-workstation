@@ -208,3 +208,52 @@ update public.docs d set data = d.data || jsonb_build_object(
   'note', '每分鐘自動同步（App 直接回報匿名事件，沒有自己的伺服器）。下載＝App 第一次開啟；新訂閱＝買完整版（一次買斷，不是訂閱，所以沒有有效訂閱）；營收＝商店標價（未扣抽成）。退款出現在退訂紀錄；AI 服務宕機出現在趨勢圖的事件；App 閃退出現在 Bug 追蹤。關掉「傳送匿名使用統計」的人不算在內。iOS 1.0.1、Android 第一版起才有。',
   'platforms', '["iOS", "Android"]'::jsonb, 'updatedAt', (extract(epoch from now()) * 1000)::bigint), updated_at = now()
 where d.collection = 'products' and d.id = 'a8a891dcdd4d407c92b1';
+
+-- Right away on LINE (owner, 2026-11-20: 「今天有人訂閱，我就是要及時收到」): every purchase and refund,
+-- the first phone to see a provider's outage that day, and the first time a crash is seen. Sent through
+-- the edge function line-relay (pg_net, after the app's call commits); retry_key makes LINE deliver each once.
+create or replace function private.app_event_notify() returns trigger
+language plpgsql security definer set search_path = '' as $fn$
+declare c private.app_event_products; v_name text; v_text text; v_m text; v_n int;
+begin
+  select * into c from private.app_event_products p where p.product_id = new.product_id;
+  if c.product_id is null then return null; end if;
+  select coalesce(d.data->>'name', new.product_id) into v_name from public.docs d where d.collection = 'products' and d.id = new.product_id;
+  v_name := coalesce(v_name, new.product_id);
+  if new.kind = 'purchase' then
+    select count(*) into v_n from private.app_events e where e.product_id = new.product_id and e.kind = 'purchase'
+      and (e.at at time zone 'Asia/Taipei')::date = (new.at at time zone 'Asia/Taipei')::date;
+    v_text := '💰 ' || v_name || ' 有人買了完整版！' || E'\n'
+      || coalesce(new.currency || ' ' || trim(to_char(new.amount, 'FM999999990.##')), '金額不明') || '・'
+      || case new.platform when 'ios' then 'iPhone' when 'android' then 'Android' else new.platform end || '・' || coalesce(new.market, '')
+      || '・v' || coalesce(new.version, '') || E'\n今天第 ' || v_n || ' 筆';
+  elsif new.kind = 'refund' then
+    v_text := '↩️ ' || v_name || ' 完整版被退款（或撤銷）' || E'\n'
+      || coalesce(new.currency || ' ' || trim(to_char(new.amount, 'FM999999990.##')) || '・', '')
+      || case new.platform when 'ios' then 'iPhone' when 'android' then 'Android' else new.platform end || '・' || coalesce(new.market, '');
+  elsif new.kind = 'outage' and new.provider is not null and not exists (
+      select 1 from private.app_events e where e.product_id = new.product_id and e.kind = 'outage' and e.provider = new.provider
+        and e.event_id <> new.event_id and (e.at at time zone 'Asia/Taipei')::date = (new.at at time zone 'Asia/Taipei')::date) then
+    v_text := '⚠️ ' || initcap(new.provider) || ' 服務宕機' || E'\n' || v_name || ' 的用戶在 '
+      || to_char(new.at at time zone 'Asia/Taipei', 'HH24:MI') || ' 偵測到（狀態：' || coalesce(new.indicator, '?') || '）';
+  elsif new.kind = 'crash' and new.msg is not null and not exists (
+      select 1 from private.app_events e where e.product_id = new.product_id and e.kind = 'crash' and e.msg = new.msg and e.event_id <> new.event_id) then
+    v_text := '🐞 ' || v_name || ' 新的閃退' || E'\n' || left(new.msg, 200) || E'\n'
+      || case new.platform when 'ios' then 'iPhone' when 'android' then 'Android' else new.platform end || '・v' || coalesce(new.version, '')
+      || E'\n已加到 Bug 追蹤（下一分鐘）';
+  end if;
+  if v_text is null then return null; end if;
+  v_m := md5(new.product_id || ':' || new.event_id);
+  perform net.http_post(
+    url := 'https://bpovoxjdqdwhhlfwgpep.supabase.co/functions/v1/line-relay',
+    body := jsonb_build_object('key', c.ingest_key, 'product', new.product_id, 'text', v_text,
+      'retry_key', substr(v_m, 1, 8) || '-' || substr(v_m, 9, 4) || '-' || substr(v_m, 13, 4) || '-' || substr(v_m, 17, 4) || '-' || substr(v_m, 21, 12)),
+    headers := jsonb_build_object('Content-Type', 'application/json'),
+    timeout_milliseconds := 10000);
+  return null;
+exception when others then
+  return null; -- a LINE problem never loses the event
+end $fn$;
+revoke execute on function private.app_event_notify() from public, anon, authenticated;
+drop trigger if exists app_event_notify on private.app_events;
+create trigger app_event_notify after insert on private.app_events for each row execute function private.app_event_notify();
