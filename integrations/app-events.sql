@@ -113,21 +113,32 @@ begin
   v_to := (now() at time zone 'Asia/Taipei')::date;
   v_from := v_to - (p_days - 1);
   for c in select * from private.app_event_products loop
-    -- 下載 / 新訂閱 / 營收 per Taipei day, market and platform. 有效訂閱 does not apply (one-time purchase).
+    -- 下載 / 新訂閱 (購買) / 營收 per Taipei day, market and platform. 有效訂閱 does not apply (one-time purchase).
+    -- Days whose App Store report has arrived use Apple's numbers instead of the events (store-report-linked.sql).
     select coalesce(jsonb_agg(jsonb_build_object('d', g.d, 'm', g.m, 'pf', g.pf, 'dl', g.dl, 'sub', g.sub, 'act', 0, 'rev', g.rev)), '[]'::jsonb)
     into v_rows
     from (
       select d, m, pf, sum(dl) dl, sum(sub) sub,
         coalesce(jsonb_object_agg(cur, amt) filter (where cur is not null), '{}'::jsonb) rev
       from (
-        select (e.at at time zone 'Asia/Taipei')::date d, e.market m, e.platform pf,
-          count(*) filter (where e.kind = 'first_open') dl,
-          count(*) filter (where e.kind = 'purchase') sub,
-          e.currency cur, sum(e.amount) filter (where e.kind = 'purchase') amt
-        from private.app_events e
-        where e.product_id = c.product_id and e.kind in ('first_open', 'purchase')
-          and (e.at at time zone 'Asia/Taipei')::date between v_from and v_to
-        group by 1, 2, 3, e.currency
+        select ev.* from (
+          select (e.at at time zone 'Asia/Taipei')::date d, e.market m, e.platform pf,
+            count(*) filter (where e.kind = 'first_open') dl,
+            count(*) filter (where e.kind = 'purchase') sub,
+            e.currency cur, sum(e.amount) filter (where e.kind = 'purchase') amt
+          from private.app_events e
+          where e.product_id = c.product_id and e.kind in ('first_open', 'purchase')
+            and (e.at at time zone 'Asia/Taipei')::date between v_from and v_to
+          group by 1, 2, 3, e.currency
+        ) ev
+        where not exists (select 1 from private.store_report_days sd where sd.product_id = c.product_id and sd.pf = ev.pf and sd.d = ev.d)
+        union all
+        select r.d, r.m, r.pf, r.dl, r.sub, null, null
+        from private.store_report_rows r where r.product_id = c.product_id and r.d between v_from and v_to
+        union all
+        select r.d, r.m, r.pf, 0, 0, v.key, v.value::numeric
+        from private.store_report_rows r cross join lateral jsonb_each_text(r.rev) v
+        where r.product_id = c.product_id and r.d between v_from and v_to
       ) s group by d, m, pf
     ) g;
     v_res := public.ingest_metrics(c.ingest_key, c.product_id, v_from, v_to, v_rows);

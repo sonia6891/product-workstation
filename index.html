@@ -597,9 +597,13 @@ const DEFAULT_CFG = {
   channels: ['Meta', 'Google Ads', 'TikTok', 'Apple Search Ads'],
   storeCut: 15 // % the App Store keeps (15 in the Small Business Program, otherwise 30); 設定 → 幣別與市場
 };
+// A product sold once (額度雷達: one-time full version, product field model: 'once') has 購買 instead of
+// 新訂閱 and no 有效訂閱. The labels switch when only such products are shown.
+const buyOnly = () => { const ids = UI.product !== 'all' ? [UI.product] : [...S.products.keys()]; return ids.length > 0 && ids.every(id => S.products.get(id)?.model === 'once'); };
+const subName = () => buyOnly() ? '購買' : '新訂閱';
 const METRICS = {
   dl:   { name: '下載', fmt: 'int' },
-  sub:  { name: '新訂閱', fmt: 'int' },
+  sub:  { get name() { return subName(); }, fmt: 'int' },
   act:  { name: '有效訂閱', fmt: 'int' },
   rev:  { name: '營收', fmt: 'cur' },
   // 營收 is what customers paid. 實拿 takes off the store's cut (設定 → 商店抽成), 淨利 also takes off the ad spend.
@@ -609,7 +613,7 @@ const METRICS = {
   profit: { name: '淨利', fmt: 'cur', note: () => '實拿−廣告', derive: c => c.rev * (1 - storeCutPct() / 100) - c.ad },
   roas: { name: 'ROAS', fmt: 'x', derive: c => c.ad ? c.rev / c.ad : null },
   cpi:  { name: 'CPI', fmt: 'cur2', lower: true, derive: c => c.dl && c.ad ? c.ad / c.dl : null },
-  cpa:  { name: '單一訂閱成本', fmt: 'cur2', lower: true, derive: c => c.sub && c.ad ? c.ad / c.sub : null },
+  cpa:  { get name() { return buyOnly() ? '單一購買成本' : '單一訂閱成本'; }, fmt: 'cur2', lower: true, derive: c => c.sub && c.ad ? c.ad / c.sub : null },
   cvr:  { name: '訂閱轉換率', fmt: 'pct', derive: c => c.dl ? c.sub / c.dl : null }
 };
 const BUG_STATUS = [['new', '待處理', 'st-open'], ['doing', '處理中', 'st-active'], ['verify', '待驗證', 'st-check'], ['done', '已解決', 'st-done'], ['wont', '不處理', 'st-off']];
@@ -1199,7 +1203,7 @@ function renderOverview(el) {
   const prv = aggregate({ start: P.pstart, end: P.pend, gran: 'all', groupBy: 'total' }).groups.get('total')?.s[0] || blankCell();
   const daily = aggregate({ start: P.start, end: P.end, gran: P.gran, groupBy: 'total' });
   const tot = daily.groups.get('total');
-  const tiles = ['dl', 'sub', 'act', 'rev', 'net', 'ad', 'profit', 'roas', 'cpi', 'cvr'].map(k => {
+  const tiles = ['dl', 'sub', 'act', 'rev', 'net', 'ad', 'profit', 'roas', 'cpi', 'cvr'].filter(k => !(k === 'act' && buyOnly())).map(k => {
     const M = METRICS[k], v = cellVal(cur, k), pv = cellVal(prv, k);
     let delta = '<b class="flat">—</b>';
     if (v != null && pv) {
@@ -1248,7 +1252,7 @@ function renderOverview(el) {
   const byM = [...aggregate({ start: P.start, end: P.end, gran: 'all', groupBy: 'market' }).groups.values()].map(g => ({ k: g.key, c: g.s[0] })).sort((a, b) => b.c.rev - a.c.rev || b.c.dl - a.c.dl);
   const mRev = byM.reduce((s, r) => s + r.c.rev, 0) || 1;
   const rowCells = c => `<td class="n">${fmtVal(cellVal(c, 'dl'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'sub'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'rev'), 'cur')}</td><td class="n">${fmtVal(cellVal(c, 'ad'), 'cur')}</td><td class="n">${fmtVal(cellVal(c, 'profit'), 'cur')}</td><td class="n">${fmtVal(cellVal(c, 'cpi'), 'cur2')}</td><td class="n">${fmtVal(cellVal(c, 'roas'), 'x')}</td><td class="n">${fmtVal(cellVal(c, 'cvr'), 'pct')}</td>`;
-  const thead = first => `<thead><tr><th>${first}</th><th class="n">下載</th><th class="n">新訂閱</th><th class="n">營收</th><th class="n">廣告花費</th><th class="n" title="營收扣掉商店抽成，再扣掉廣告花費">淨利</th><th class="n">CPI</th><th class="n">ROAS</th><th class="n">轉換率</th></tr></thead>`;
+  const thead = first => `<thead><tr><th>${first}</th><th class="n">下載</th><th class="n">${subName()}</th><th class="n">營收</th><th class="n">廣告花費</th><th class="n" title="營收扣掉商店抽成，再扣掉廣告花費">淨利</th><th class="n">CPI</th><th class="n">ROAS</th><th class="n">轉換率</th></tr></thead>`;
   const mTable = byM.length ? `<div class="tw"><table class="t">${thead('市場')}<tbody>${byM.map(r => `<tr class="click" data-act="pickmarket" data-id="${esc(r.k)}"><td><i class="dot" style="background:${SLOT(mIndex(r.k))}"></i> ${esc(mName(r.k))} <span class="mono hint">${esc(r.k)}</span><span class="share" title="營收佔比"><i style="width:${(r.c.rev / mRev * 100).toFixed(1)}%"></i></span></td>${rowCells(r.c)}</tr>`).join('')}</tbody></table></div>` : '<p class="hint">這段期間沒有數據。</p>';
 
   let pTable = '';
@@ -1270,13 +1274,13 @@ function renderOverview(el) {
   const topBugs = ob.sort((a, b) => a.priority.localeCompare(b.priority) || (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 5);
   const topFeat = feats.filter(i => isOpen(i.status)).sort((a, b) => (b.votes || 0) - (a.votes || 0)).slice(0, 5);
 
-  const metricChips = Object.entries(METRICS).filter(([k]) => k !== 'cpa').map(([k, M]) => `<button class="chip ${UI.metric === k ? 'on' : ''}" data-act="metric" data-id="${k}">${M.name}</button>`).join('');
+  const metricChips = Object.entries(METRICS).filter(([k]) => k !== 'cpa' && !(k === 'act' && buyOnly())).map(([k, M]) => `<button class="chip ${UI.metric === k ? 'on' : ''}" data-act="metric" data-id="${k}">${M.name}</button>`).join('');
   const groupSeg = [['total', '合計'], ['product', '依產品'], ['market', '依市場'], ['platform', '依平台']].map(([k, l]) => `<button type="button" data-act="group" data-id="${k}" class="${gb === k ? 'on' : ''}">${l}</button>`).join('');
   const roas = cellVal(cur, 'roas');
   const td = aggregate({ start: TODAY, end: TODAY, gran: 'all', groupBy: 'total' }).groups.get('total')?.s[0] || blankCell();
   const liveHTML = lastPush() ? `<div class="live span12" aria-live="off"><span class="lt">今天即時</span>
-    <span>下載<b>${fmtVal(cellVal(td, 'dl'), 'int')}</b></span><span>新訂閱<b>${fmtVal(cellVal(td, 'sub'), 'int')}</b></span>
-    <span>有效訂閱<b>${fmtVal(cellVal(td, 'act'), 'int')}</b></span><span>營收<b>${fmtVal(cellVal(td, 'rev'), 'cur')}</b></span>
+    <span>下載<b>${fmtVal(cellVal(td, 'dl'), 'int')}</b></span><span>${subName()}<b>${fmtVal(cellVal(td, 'sub'), 'int')}</b></span>
+    ${buyOnly() ? '' : `<span>有效訂閱<b>${fmtVal(cellVal(td, 'act'), 'int')}</b></span>`}<span>營收<b>${fmtVal(cellVal(td, 'rev'), 'cur')}</b></span>
     <span class="la" id="live-at"></span></div>` : '';
 
   const attn = attentionHTML(attention(P, cur)); // also decides which folded cards open by themselves
@@ -1315,15 +1319,15 @@ function renderOverview(el) {
 function platformHTML(P, cur) {
   const pf = aggregate({ start: P.start, end: P.end, gran: 'all', groupBy: 'platform' }).groups;
   if (![...pf.values()].some(g => g.s[0].has)) return '';
-  const cells = c => `<td class="n">${fmtVal(cellVal(c, 'dl'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'sub'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'act'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'rev'), 'cur')}</td>`;
+  const cells = c => `<td class="n">${fmtVal(cellVal(c, 'dl'), 'int')}</td><td class="n">${fmtVal(cellVal(c, 'sub'), 'int')}</td>${buyOnly() ? '' : `<td class="n">${fmtVal(cellVal(c, 'act'), 'int')}</td>`}<td class="n">${fmtVal(cellVal(c, 'rev'), 'cur')}</td>`;
   const rows = STORE_PF.map(([k, name, color]) => ({ name, color, c: pf.get(k)?.s[0] || blankCell() }));
   const sum = rows.reduce((a, r) => mergeCells(a, r.c), blankCell());
   const rest = { dl: cur.dl - sum.dl, sub: cur.sub - sum.sub, rev: cur.rev - sum.rev, act: (cur.hasAct ? cur.act : 0) - (sum.hasAct ? sum.act : 0) };
   const hasRest = Math.abs(rest.dl) > 0.5 || Math.abs(rest.sub) > 0.5 || Math.abs(rest.rev) > 0.5 || Math.abs(rest.act) > 0.5;
   const restRow = hasRest ? `<tr><td class="hint">沒有分平台</td>${cells({ ...rest, ad: 0, has: true, hasAct: true })}</tr>` : '';
   const share = (c, k) => sum[k] > 0 ? `<small class="hint"> ${Math.round(c[k] / sum[k] * 100)}%</small>` : '';
-  return `<section class="card span12" id="card-platform"><header><h3>蘋果與安卓<small>選的期間・有效訂閱是期末人數</small></h3></header>
-    <div class="tw"><table class="t"><thead><tr><th>平台</th><th class="n">下載</th><th class="n">新訂閱</th><th class="n">有效訂閱</th><th class="n">營收</th></tr></thead>
+  return `<section class="card span12" id="card-platform"><header><h3>蘋果與安卓<small>選的期間${buyOnly() ? '' : '・有效訂閱是期末人數'}</small></h3></header>
+    <div class="tw"><table class="t"><thead><tr><th>平台</th><th class="n">下載</th><th class="n">${subName()}</th>${buyOnly() ? '' : '<th class="n">有效訂閱</th>'}<th class="n">營收</th></tr></thead>
     <tbody>${rows.map(r => `<tr><td><i class="dot" style="background:${r.color}"></i> ${r.name}${share(r.c, 'sub')}</td>${cells(r.c)}</tr>`).join('')}${restRow}
     <tr><td><b>合計</b></td>${cells(cur).replace(/<td class="n">/g, '<td class="n"><b>').replace(/<\/td>/g, '</b></td>')}</tr></tbody></table></div>
     <p class="hint" style="margin:10px 0 0">下載用兩家商店的官方報表：蘋果是 App Store、安卓是 Google Play。報表大約慢兩天，還沒出來的日子先用「第一次打開 App 的人數」，會比後台少一點，報表到了就自動換成官方數字。百分比是新訂閱的佔比。</p></section>`;
@@ -1350,7 +1354,7 @@ function roiHTML(P, cur) {
   return `<section class="card span12${foldCls('roi')}" id="card-roi"><header><h3>廣告回本<small>這段期間花的廣告費換回了什麼</small></h3>${foldBtn('roi')}</header>
     <div class="stat-row" style="margin-bottom:12px">${stat(fmtVal(cur.ad, 'cur'), '廣告花費')}${stat(fmtVal(cellVal(cur, 'cpi'), 'cur2'), '每次下載成本')}${stat(fmtVal(cpa, 'cur'), '每個新付費用戶成本')}${stat(fmtVal(R.net, 'cur'), `實拿營收（扣 ${R.cutPct}% 抽成）`)}${stat(fmtVal(cur.ad ? R.net / cur.ad : null, 'x'), '實拿營收 ÷ 廣告費')}${stat(fmtVal(perSub, 'cur'), '每個新訂閱實拿')}</div>
     ${verdict ? `<p style="margin:0 0 12px">${verdict}。</p>` : ''}
-    <div class="tw"><table class="t"><thead><tr><th>投廣告的市場</th><th class="n">花費</th><th class="n">下載</th><th class="n">新訂閱</th><th class="n">每次下載成本</th><th class="n">每個新付費用戶成本</th><th class="n">營收</th><th class="n">營收 ÷ 廣告費</th></tr></thead>
+    <div class="tw"><table class="t"><thead><tr><th>投廣告的市場</th><th class="n">花費</th><th class="n">下載</th><th class="n">${subName()}</th><th class="n">每次下載成本</th><th class="n">每個新付費用戶成本</th><th class="n">營收</th><th class="n">營收 ÷ 廣告費</th></tr></thead>
     <tbody>${paid.map(r => row(`<i class="dot" style="background:${SLOT(mIndex(r.k))}"></i> ${esc(mName(r.k))} <span class="mono hint">${esc(r.k)}</span>`, r.c, r.k)).join('')}${freeRow}</tbody></table></div>
     <p class="hint" style="margin:10px 0 0">Meta 不會告訴我們哪些下載是廣告帶來的，所以下載與新訂閱也包含自己找來的人，成本是「整體平均」；跟沒投廣告的市場比，就看得出廣告多帶來多少。「每個新訂閱實拿」= 期間營收扣掉商店抽成 ${R.cutPct}%（在「設定」可以改）÷ 新訂閱；營收含年費一次付清與續訂，退款的那筆不算。表格裡的營收是用戶付款金額，還沒扣抽成。</p></section>`;
 }
@@ -1382,7 +1386,7 @@ function attention(P, cur) {
     const n = UI.product === 'all' ? `${esc(p.name)}：` : '';
     const c = tot(p.id, y, y), w = tot(p.id, w0, w1), a = { dl: w.dl / 7, sub: w.sub / 7, rev: w.rev / 7, ad: w.ad / 7 };
     if (a.dl >= 20 && c.dl < a.dl * 0.5) add('warn', `${n}昨天下載 ${fmtN(c.dl)}，不到前 7 天平均（${fmtN(Math.round(a.dl))}）的一半`);
-    if (a.sub >= 2 && c.sub === 0) add('bad', `${n}昨天一整天沒有新訂閱（前 7 天平均一天 ${a.sub.toFixed(1)} 個）`);
+    if (a.sub >= 2 && c.sub === 0) add('bad', `${n}昨天一整天沒有${subName()}（前 7 天平均一天 ${a.sub.toFixed(1)} 個）`);
     if (a.rev > 0 && a.sub >= 2 && c.rev < a.rev * 0.3) add('bad', `${n}昨天營收 ${fmtVal(c.rev, 'cur')}，不到前 7 天平均的三成`);
     if (a.ad >= 100 && c.ad > a.ad * 2) add('warn', `${n}昨天廣告費 ${fmtVal(c.ad, 'cur')}，是前 7 天平均的兩倍以上`, { card: 'roi' });
     if (c.ad >= 300 && c.dl < c.ad / 30) add('warn', `${n}昨天廣告有花（${fmtVal(c.ad, 'cur')}）但下載很少，看一下廣告`, { card: 'roi' });
@@ -1896,6 +1900,7 @@ function productModal(id) {
     <div class="fld"><span>平台</span><div class="checks">${['iOS', 'Android', 'Web', 'macOS', 'Windows'].map(pl => `<label><input type="checkbox" name="pl" value="${pl}" ${d.platforms?.includes(pl) ? 'checked' : ''}> ${pl}</label>`).join('')}</div></div>
     <div class="g2">
       <label class="fld"><span>上線日期</span><input id="pm-launch" type="date" value="${esc(d.launch)}"></label>
+      <label class="fld"><span>收費方式</span><select id="pm-model"><option value="">訂閱</option><option value="once" ${d.model === 'once' ? 'selected' : ''}>一次買斷（顯示「購買」，沒有有效訂閱）</option></select></label>
       <label class="fld"><span>App Store ID</span><input id="pm-ios" value="${esc(d.ios)}" placeholder="例：id1234567890"></label>
       <label class="fld"><span>Google Play 套件名稱</span><input id="pm-and" value="${esc(d.android)}" placeholder="例：com.example.app"></label>
     </div>
@@ -1908,7 +1913,7 @@ function productModal(id) {
       const name = $('#pm-name').value.trim(); if (!name) return;
       const used = new Set(productsSorted().filter(x => x.id !== id).map(x => x.slot));
       let slot = p ? p.slot : [0, 1, 2, 3, 4, 5, 6, 7].find(i => !used.has(i)); if (slot == null) slot = S.products.size % 8;
-      const body = { name, status: $('#pm-st').value, platforms: $$('input[name=pl]:checked', sheet).map(x => x.value), launch: $('#pm-launch').value, ios: $('#pm-ios').value.trim(), android: $('#pm-and').value.trim(), note: $('#pm-note').value, slot, createdAt: p?.createdAt || Date.now(), updatedAt: Date.now() };
+      const body = { name, status: $('#pm-st').value, platforms: $$('input[name=pl]:checked', sheet).map(x => x.value), launch: $('#pm-launch').value, model: $('#pm-model').value, ios: $('#pm-ios').value.trim(), android: $('#pm-and').value.trim(), note: $('#pm-note').value, slot, createdAt: p?.createdAt || Date.now(), updatedAt: Date.now() };
       if (p?.sample) body.sample = true;
       let newId = id;
       const ok = await W(async () => { if (id) await db.doc('products/' + id).set(body); else { const ref = db.collection('products').doc(); newId = ref.id; await ref.set(body); } }, id ? '已更新產品' : '已新增產品');
@@ -2022,7 +2027,7 @@ function updateData() {
   $('#rc-sub').textContent = `${pName(p)}・${mName(m)}`;
   const rows = [];
   for (let i = 0; i < 21; i++) { const d = addDays(TODAY, -i); const r = getDay(p, m, d); if (r) rows.push([d, r]); }
-  rc.innerHTML = rows.length ? `<div class="tw"><table class="t"><thead><tr><th>日期</th><th class="n">下載</th><th class="n">新訂閱</th><th class="n">營收</th><th class="n">廣告</th></tr></thead><tbody>${rows.map(([d, r]) => `<tr class="click" data-act="loadday" data-id="${d}" ${d === sel ? 'style="font-weight:500"' : ''}><td>${dayLabel(d)} <span class="hint">週${WEEK[new Date(d.replace(/-/g, '/')).getDay()]}</span></td><td class="n">${fmtVal(r.dl, 'int')}</td><td class="n">${fmtVal(r.sub, 'int')}</td><td class="n">${fmtVal(r.rev, 'cur')}</td><td class="n">${fmtVal(r.ad != null ? adSum(r.ad) : null, 'cur')}</td></tr>`).join('')}</tbody></table></div><p class="hint" style="margin-top:8px">點選一列可載入修改。</p>` : '<p class="hint">近 21 天沒有這個產品在這個市場的紀錄。</p>';
+  rc.innerHTML = rows.length ? `<div class="tw"><table class="t"><thead><tr><th>日期</th><th class="n">下載</th><th class="n">${subName()}</th><th class="n">營收</th><th class="n">廣告</th></tr></thead><tbody>${rows.map(([d, r]) => `<tr class="click" data-act="loadday" data-id="${d}" ${d === sel ? 'style="font-weight:500"' : ''}><td>${dayLabel(d)} <span class="hint">週${WEEK[new Date(d.replace(/-/g, '/')).getDay()]}</span></td><td class="n">${fmtVal(r.dl, 'int')}</td><td class="n">${fmtVal(r.sub, 'int')}</td><td class="n">${fmtVal(r.rev, 'cur')}</td><td class="n">${fmtVal(r.ad != null ? adSum(r.ad) : null, 'cur')}</td></tr>`).join('')}</tbody></table></div><p class="hint" style="margin-top:8px">點選一列可載入修改。</p>` : '<p class="hint">近 21 天沒有這個產品在這個市場的紀錄。</p>';
   const ev = $('#ev-list');
   const evs = [...S.events.values()].filter(e => !e.product || e.product === 'all' || S.products.has(e.product)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
   ev.innerHTML = evs.length ? evs.map(e => `<div class="evrow"><span class="mono">${esc(e.date)}</span><span class="pill">${esc((EVKINDS.find(k => k[0] === e.kind) || EVKINDS[3])[1])}</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.title)} <span class="hint">・${e.product && e.product !== 'all' ? esc(pName(e.product)) : '全部產品'}</span>${e.sample ? '<span class="sample-tag">範例</span>' : ''}</span>${canWrite && db ? `<button class="btn sm ghost" data-act="delevent" data-id="${e.id}" aria-label="刪除事件">刪除</button>` : '<span></span>'}</div>`).join('') : '<p class="hint" style="margin-top:12px">還沒有事件。</p>';
