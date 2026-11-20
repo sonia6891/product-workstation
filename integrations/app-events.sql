@@ -108,37 +108,56 @@ create or replace function private.app_events_push(p_days int)
 returns jsonb language plpgsql security definer set search_path = '' as $fn$
 declare
   c record; v_to date; v_from date; v_rows jsonb; v_refunds jsonb; v_res jsonb; v_ref jsonb; v_out jsonb := '{}'::jsonb;
-  o record; b record; v_name text; v_id text; v_title text;
+  o record; b record; v_name text; v_id text; v_title text; v_live date;
 begin
   v_to := (now() at time zone 'Asia/Taipei')::date;
   v_from := v_to - (p_days - 1);
   for c in select * from private.app_event_products loop
     -- 下載 / 新訂閱 (購買) / 營收 per Taipei day, market and platform. 有效訂閱 does not apply (one-time purchase).
-    -- Days whose App Store report has arrived use Apple's numbers instead of the events (store-report-linked.sql).
+    -- iPhone purchases and refunds: from the day Apple's server notifications reach us (app_event_products.apple_live_at,
+    -- apple-notifications.sql), only the ones Apple confirmed (provider 'apple', Production only, right away). Before
+    -- that day: the app's own events, or Apple's daily report on days it has arrived (store-report-linked.sql).
+    -- Downloads: the app's first-open events, or Apple's report on the days it has arrived.
+    v_live := (c.apple_live_at at time zone 'Asia/Taipei')::date;
     select coalesce(jsonb_agg(jsonb_build_object('d', g.d, 'm', g.m, 'pf', g.pf, 'dl', g.dl, 'sub', g.sub, 'act', 0, 'rev', g.rev)), '[]'::jsonb)
     into v_rows
     from (
       select d, m, pf, sum(dl) dl, sum(sub) sub,
-        coalesce(jsonb_object_agg(cur, amt) filter (where cur is not null), '{}'::jsonb) rev
+        coalesce(jsonb_object_agg(cur, amt) filter (where cur is not null and amt is not null), '{}'::jsonb) rev
       from (
-        select ev.* from (
-          select (e.at at time zone 'Asia/Taipei')::date d, e.market m, e.platform pf,
-            count(*) filter (where e.kind = 'first_open') dl,
-            count(*) filter (where e.kind = 'purchase') sub,
-            e.currency cur, sum(e.amount) filter (where e.kind = 'purchase') amt
-          from private.app_events e
-          where e.product_id = c.product_id and e.kind in ('first_open', 'purchase')
-            and (e.at at time zone 'Asia/Taipei')::date between v_from and v_to
-          group by 1, 2, 3, e.currency
-        ) ev
-        where not exists (select 1 from private.store_report_days sd where sd.product_id = c.product_id and sd.pf = ev.pf and sd.d = ev.d)
-        union all
-        select r.d, r.m, r.pf, r.dl, r.sub, null, null
-        from private.store_report_rows r where r.product_id = c.product_id and r.d between v_from and v_to
-        union all
-        select r.d, r.m, r.pf, 0, 0, v.key, v.value::numeric
-        from private.store_report_rows r cross join lateral jsonb_each_text(r.rev) v
-        where r.product_id = c.product_id and r.d between v_from and v_to
+        select d, m, pf, cur, sum(dl) dl, sum(sub) sub, sum(amt) amt
+        from (
+          select ev.d, ev.m, ev.pf, ev.cur,
+            case when ev.reported then 0 else ev.dl end dl,
+            case when ev.apple then ev.sub_apple when ev.reported then 0 else ev.sub_all end sub,
+            case when ev.apple then ev.amt_apple when ev.reported then null else ev.amt_all end amt
+          from (
+            select x.*,
+              exists (select 1 from private.store_report_days sd where sd.product_id = c.product_id and sd.pf = x.pf and sd.d = x.d) reported,
+              (v_live is not null and x.pf = 'ios' and x.d >= v_live) apple
+            from (
+              select (e.at at time zone 'Asia/Taipei')::date d, e.market m, e.platform pf, e.currency cur,
+                count(*) filter (where e.kind = 'first_open') dl,
+                count(*) filter (where e.kind = 'purchase') sub_all,
+                count(*) filter (where e.kind = 'purchase' and e.provider = 'apple') sub_apple,
+                sum(e.amount) filter (where e.kind = 'purchase') amt_all,
+                sum(e.amount) filter (where e.kind = 'purchase' and e.provider = 'apple') amt_apple
+              from private.app_events e
+              where e.product_id = c.product_id and e.kind in ('first_open', 'purchase')
+                and (e.at at time zone 'Asia/Taipei')::date between v_from and v_to
+              group by 1, 2, 3, 4
+            ) x
+          ) ev
+          union all
+          select r.d, r.m, r.pf, null, r.dl,
+            case when v_live is not null and r.pf = 'ios' and r.d >= v_live then 0 else r.sub end, null
+          from private.store_report_rows r where r.product_id = c.product_id and r.d between v_from and v_to
+          union all
+          select r.d, r.m, r.pf, v.key, 0, 0, v.value::numeric
+          from private.store_report_rows r cross join lateral jsonb_each_text(r.rev) v
+          where r.product_id = c.product_id and r.d between v_from and v_to
+            and not (v_live is not null and r.pf = 'ios' and r.d >= v_live)
+        ) s0 group by d, m, pf, cur
       ) s group by d, m, pf
     ) g;
     v_res := public.ingest_metrics(c.ingest_key, c.product_id, v_from, v_to, v_rows);
@@ -148,7 +167,8 @@ begin
       'plan', '完整版', 'paid', case when e.currency is not null then jsonb_build_object(e.currency, e.amount) end,
       'm', e.market, 'account', upper(left(e.iid, 6)))), '[]'::jsonb)
     into v_refunds
-    from private.app_events e where e.product_id = c.product_id and e.kind = 'refund' and e.at > now() - make_interval(days => p_days);
+    from private.app_events e where e.product_id = c.product_id and e.kind = 'refund' and e.at > now() - make_interval(days => p_days)
+      and (v_live is null or e.platform <> 'ios' or (e.at at time zone 'Asia/Taipei')::date < v_live or e.provider = 'apple');
     if jsonb_array_length(v_refunds) > 0 then v_ref := public.ingest_events(c.ingest_key, c.product_id, v_refunds); end if;
 
     -- Outages → one trend-chart marker per provider per Taipei day, with how many phones saw it.
@@ -216,7 +236,7 @@ select cron.schedule('app-events-push-full', '23 * * * *', $$select private.app_
 
 -- What the product card says about where the numbers come from.
 update public.docs d set data = d.data || jsonb_build_object(
-  'note', '每分鐘自動同步（App 直接回報匿名事件，沒有自己的伺服器）。下載＝App 第一次開啟；新訂閱＝買完整版（一次買斷，不是訂閱，所以沒有有效訂閱）；營收＝商店標價（未扣抽成）。退款出現在退訂紀錄；AI 服務宕機出現在趨勢圖的事件；App 閃退出現在 Bug 追蹤。關掉「傳送匿名使用統計」的人不算在內。iOS 1.0.1、Android 第一版起才有。',
+  'note', '每分鐘自動同步。iPhone 的購買和退款＝Apple 伺服器即時通知到工作站的 Supabase（只算正式購買，沙盒和 TestFlight 測試不算）；接上通知之前與 Android＝App 回報的購買。購買＝買完整版（一次買斷，沒有有效訂閱）；營收＝用戶付的金額（未扣抽成）。下載＝App 第一次開啟，Apple 每日報表到了的日子改用 Apple 的總下載。退款出現在退訂紀錄；AI 服務宕機出現在趨勢圖的事件；App 閃退出現在 Bug 追蹤。',
   'platforms', '["iOS", "Android"]'::jsonb, 'updatedAt', (extract(epoch from now()) * 1000)::bigint), updated_at = now()
 where d.collection = 'products' and d.id = 'a8a891dcdd4d407c92b1';
 
@@ -229,15 +249,23 @@ declare c private.app_event_products; v_name text; v_text text; v_m text; v_n in
 begin
   select * into c from private.app_event_products p where p.product_id = new.product_id;
   if c.product_id is null then return null; end if;
+  -- iPhone purchases and refunds once Apple's notifications arrive: only Apple's confirmed one is announced. When the
+  -- app's own event came first, Apple's notification turns it into provider 'apple' (an update), and that is announced.
+  if new.platform = 'ios' and new.kind in ('purchase', 'refund') and c.apple_live_at is not null and new.provider is distinct from 'apple' then
+    return null;
+  end if;
+  if tg_op = 'UPDATE' and (old.provider is not distinct from 'apple' or new.provider is distinct from 'apple') then return null; end if;
   select coalesce(d.data->>'name', new.product_id) into v_name from public.docs d where d.collection = 'products' and d.id = new.product_id;
   v_name := coalesce(v_name, new.product_id);
   if new.kind = 'purchase' then
     select count(*) into v_n from private.app_events e where e.product_id = new.product_id and e.kind = 'purchase'
-      and (e.at at time zone 'Asia/Taipei')::date = (new.at at time zone 'Asia/Taipei')::date;
+      and (e.at at time zone 'Asia/Taipei')::date = (new.at at time zone 'Asia/Taipei')::date
+      and (e.platform <> 'ios' or c.apple_live_at is null or e.provider = 'apple');
     v_text := '💰 ' || v_name || ' 有人買了完整版！' || E'\n'
       || coalesce(new.currency || ' ' || trim(to_char(new.amount, 'FM999999990.##')), '金額不明') || '・'
       || case new.platform when 'ios' then 'iPhone' when 'android' then 'Android' else new.platform end || '・' || coalesce(new.market, '')
-      || '・v' || coalesce(new.version, '') || E'\n今天第 ' || v_n || ' 筆';
+      || coalesce('・v' || new.version, '') || case when new.provider = 'apple' then '・Apple 已確認' else '' end
+      || E'\n今天第 ' || v_n || ' 筆';
   elsif new.kind = 'refund' then
     v_text := '↩️ ' || v_name || ' 完整版被退款（或撤銷）' || E'\n'
       || coalesce(new.currency || ' ' || trim(to_char(new.amount, 'FM999999990.##')) || '・', '')
@@ -267,4 +295,4 @@ exception when others then
 end $fn$;
 revoke execute on function private.app_event_notify() from public, anon, authenticated;
 drop trigger if exists app_event_notify on private.app_events;
-create trigger app_event_notify after insert on private.app_events for each row execute function private.app_event_notify();
+create trigger app_event_notify after insert or update of provider on private.app_events for each row execute function private.app_event_notify();

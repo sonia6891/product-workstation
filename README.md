@@ -15,13 +15,14 @@
 | 喵的，又要上班了 | `meow-work` | App Store 銷售報表的總下載（首次＋重新下載）；報表還沒到的日子與 Android 用「App 首次開啟」估算 | App Store 訂閱通知（用戶付款金額，未扣 Apple 抽成） |
 | 職缺體檢 | `job-check` | 新用戶（首次開啟建立的帳號），市場一律 TW | 目前免費；有效訂閱讀 `profiles.plan = 'pro'` |
 | 提醒喵 | 尚未接 | — | — |
-| 額度雷達（買斷） | 沒有自己的伺服器：App 的匿名事件（`integrations/app-events.sql`）＋ `meow-work` 代送 App Store 銷售報表 | iPhone：報表到了的日子用 Apple 的總下載，還沒到的日子與 Android 用「App 首次開啟」 | 「購買」＝一次買斷的內購次數（報表的 IAP 數量，或 App 回報的購買事件）；營收＝用戶付的金額，退款會扣回 |
+| 額度雷達（買斷） | 沒有自己的伺服器：App 的匿名事件（`integrations/app-events.sql`）＋ `meow-work` 代送 App Store 銷售報表 | iPhone：報表到了的日子用 Apple 的總下載，還沒到的日子與 Android 用「App 首次開啟」 | 「購買」＝一次買斷的內購次數。iPhone：Apple 伺服器即時通知（只算正式購買，沙盒和 TestFlight 不算）；Android：App 回報的購買。營收＝用戶付的金額，退款會扣回 |
 
 - 每個來源專案都只多了一個 `workstation` schema（`config`、`export_rows`、`push`）和兩個 cron 工作（`workstation-push-live`、`workstation-push-full`；`meow-work` 另有每小時的 `workstation-push-usage`），只讀 App 的資料表，不改任何 App 資料。程式碼見 `integrations/`。
 - 每個產品有自己的推送金鑰：來源端存在 `workstation.config`（API 讀不到），工作站只存 SHA-256（`private.ingest_keys`）。
 - 自動同步會覆蓋下載、訂閱、營收；廣告花費不會被動到，請在「數據輸入」手動填。
 - 「退訂紀錄」頁：App Store 的關閉自動續訂、重新開啟、到期、退款、扣款失敗通知（`public.sub_events`，由 `public.ingest_events` 寫入），附第一次付費時間與已付金額。目前只有「喵的，又要上班了」有。
-- 額度雷達的 App Store 正式數字：Apple 的每日銷售報表涵蓋開發者帳號下所有 App，`meow-work` 本來就會抓（`asc_report_rows`）。`workstation.push()` 每分鐘／每小時順便把 App Store ID 6836609602 的列（`workstation.export_linked_store()`，`integrations/source-meow-work-linked.sql`）用 `meow-work` 自己的金鑰送到工作站的 `public.ingest_store_report()`（`integrations/store-report-linked.sql`，哪個來源可以代送哪個產品記在 `private.store_report_links`）。`app_events_push()` 在報表到了的日子改用 Apple 的數字（包含關掉匿名統計的人和所有版本）。
+- 額度雷達的 App Store 正式數字：Apple 的每日銷售報表涵蓋開發者帳號下所有 App，`meow-work` 本來就會抓（`asc_report_rows`）。`workstation.push()` 每分鐘／每小時順便把 App Store ID 6836609602 的列（`workstation.export_linked_store()`，`integrations/source-meow-work-linked.sql`）用 `meow-work` 自己的金鑰送到工作站的 `public.ingest_store_report()`（`integrations/store-report-linked.sql`，哪個來源可以代送哪個產品記在 `private.store_report_links`）。`app_events_push()` 在報表到了的日子，下載改用 Apple 的數字（包含關掉匿名統計的人和所有版本）；購買和營收在接上伺服器通知之後改用通知，不等報表。
+- 額度雷達的 iPhone 購買（即時）：Apple 每賣出一筆、每退款一筆，App Store 伺服器通知 V2 就直接送到工作站的 edge function `app-store-notifications`（驗證 Apple 簽章，`integrations/app-store-notifications/`），再由 `public.ingest_apple_notification()` 寫進 `private.app_events`（`integrations/apple-notifications.sql`，哪個 bundle id 對到哪個產品記在 `private.apple_apps`，每則通知記在 `private.apple_notifications`）。只算 Production；沙盒和 TestFlight 的測試購買只記錄、不算。收到第一則通知之後，iPhone 的購買和退款只算 Apple 確認過的，App 自己回報的 iPhone 購買不再計算，LINE 也只在 Apple 確認時通知一次。要在 App Store Connect → 額度雷達 → App 資訊 → App Store 伺服器通知，把正式和沙盒的網址都填 `https://bpovoxjdqdwhhlfwgpep.supabase.co/functions/v1/app-store-notifications`（版本 2）。
 - 買斷產品：產品設定的「收費方式」選「一次買斷」，網頁上的「新訂閱」改叫「購買」、「單一訂閱成本」改叫「單一購買成本」，並拿掉「有效訂閱」。Meta 廣告依產品填的 App Store／Google Play 連結自動對到產品。
 - 營收依「設定」的幣別換算（`private.fx` 的固定匯率）。
 - 「版本使用」「新用戶留存」卡片（總覽）：`meow-work` 每小時用 `workstation.push_usage()`（cron `workstation-push-usage`，`integrations/usage-meow-work.sql`）把匿名的 App 開啟紀錄整理成各版本每天的使用人數、依第一次開 App 那天分組的隔天／第 7 天／一週內回來比例、免費試用轉付費，送到工作站的 `public.ingest_usage`（`integrations/usage.sql`），存成 `cfg/usage-meow-work`。留存另外依「第一次開的版本」分組（`vcoh`，20 人以上的版本），用來看改版有沒有讓新用戶更願意回來。開啟紀錄從 2026-11-02 開始，第 30 天留存要等 12 月才有。
