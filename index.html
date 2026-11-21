@@ -1170,8 +1170,11 @@ function renderAll() {
   gm.value = UI.market; if (gm.value !== UI.market) { UI.market = 'all'; gm.value = 'all'; }
   const showM = v === 'overview' || v === 'data';
   $('#g-m-wrap').hidden = !showM; $('#g-r').hidden = v !== 'overview' && v !== 'churn';
-  const weekCancels = [...S.subEvents.values()].filter(e => e.kind === 'cancel' && S.products.has(e.product_id) && Date.now() - new Date(e.event_at) < 7 * 864e5).length;
-  $('#nb-churn').textContent = weekCancels || '';
+  // Same count as 退訂紀錄's 關閉自動續訂 tile: the chosen period and product.
+  const NP = period();
+  const navCancels = [...S.subEvents.values()].filter(e => e.kind === 'cancel' && S.products.has(e.product_id) && (UI.product === 'all' || e.product_id === UI.product)
+    && (d => d >= NP.start && d <= NP.end)(iso(new Date(e.event_at)))).length;
+  $('#nb-churn').textContent = navCancels || '';
   $('#g-p').closest('.sel').hidden = v === 'settings' || v === 'products';
   $$('#g-r button').forEach(b => b.classList.toggle('on', b.dataset.r === UI.range));
   // view
