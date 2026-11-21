@@ -1172,7 +1172,7 @@ function renderAll() {
   $('#g-m-wrap').hidden = !showM; $('#g-r').hidden = v !== 'overview' && v !== 'churn';
   // Same count as 退訂紀錄's 關閉自動續訂 tile: the chosen period and product.
   const NP = period();
-  const navCancels = [...S.subEvents.values()].filter(e => e.kind === 'cancel' && S.products.has(e.product_id) && (UI.product === 'all' || e.product_id === UI.product)
+  const navCancels = [...S.subEvents.values()].filter(e => e.kind === 'cancel' && !goneCancel(e) && S.products.has(e.product_id) && (UI.product === 'all' || e.product_id === UI.product)
     && (d => d >= NP.start && d <= NP.end)(iso(new Date(e.event_at)))).length;
   $('#nb-churn').textContent = navCancels || '';
   $('#g-p').closest('.sel').hidden = v === 'settings' || v === 'products';
@@ -1741,6 +1741,18 @@ function subsNowHTML() {
 
 /* ================= render: cancellations ================= */
 const SUBKIND = { cancel: ['關閉自動續訂', 'st-check'], resume: ['重新開啟續訂', 'st-done'], expire: ['到期失效', 'st-off'], refund: ['退款', 'st-active'], billing_fail: ['扣款失敗', 'st-active'] };
+// A 關閉自動續訂 whose plan has since expired and whose account did nothing in the app after that: the person is gone,
+// so 退訂紀錄 keeps only their 到期失效 row (the owner asked for this, 2026-11-22).
+function goneCancel(e) {
+  if (e.kind !== 'cancel' || !e.account) return false;
+  let exp = null;
+  for (const x of S.subEvents.values())
+    if (x.kind === 'expire' && x.product_id === e.product_id && x.account === e.account && new Date(x.event_at) >= new Date(e.event_at)
+      && (!exp || new Date(x.event_at) > new Date(exp))) exp = x.event_at;
+  if (!exp) return false;
+  const lu = S.subs.get(e.product_id)?.last_used?.[e.account];
+  return !(lu && lu > iso(new Date(exp)));
+}
 const EXPIRE_WHY = { VOLUNTARY: '自己取消', BILLING_RETRY: '扣款失敗', PRICE_INCREASE: '不同意漲價', PRODUCT_NOT_FOR_SALE: '商品下架' };
 const planName = p => !p ? '—' : /year|annual/i.test(p) ? '年費' : /month/i.test(p) ? '月費' : /week/i.test(p) ? '週費' : p;
 const whenText = s => { const d = new Date(s); return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -1812,7 +1824,7 @@ function renderChurn(el) {
   if (!S.ready) { el.innerHTML = loadingHTML(); return; }
   const P = period();
   const evs = [...S.subEvents.values()]
-    .filter(e => S.products.has(e.product_id) && (UI.product === 'all' || e.product_id === UI.product))
+    .filter(e => S.products.has(e.product_id) && (UI.product === 'all' || e.product_id === UI.product) && !goneCancel(e))
     .filter(e => { const d = iso(new Date(e.event_at)); return d >= P.start && d <= P.end; })
     .sort((a, b) => new Date(b.event_at) - new Date(a.event_at));
   const by = k => evs.filter(e => e.kind === k);
